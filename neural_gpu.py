@@ -20,6 +20,41 @@ import tensorflow as tf
 
 import data_utils
 
+FLAGS = tf.app.flags.FLAGS
+
+class NeuralConfig(object):
+  config_keys = '''nmaps niclass noclass dropout rx_step max_grad_norm
+  cutoff nconvs kw kh height mode lr pull pull_incr
+  min_length batch_size grad_noise_scale task
+  train_data_size init_weight curriculum_bound
+  '''.split() 
+
+  def __init__(self, FLAGS, **kws):
+    for key in self.config_keys:
+      val = kws.get(key, getattr(FLAGS, key, None))
+      setattr(self, key, val)
+
+    min_length = 3
+    max_length = min(FLAGS.max_length, data_utils.bins[-1])
+    assert max_length + 1 > min_length
+    self.max_length = max_length
+    self.min_length = min_length
+
+    self.binary_activation = 1
+    self.binary_annealing = FLAGS.binary_activation
+    self.do_binary = FLAGS.binary_activation >= 0
+
+  def __str__(self):
+    msg1 = ("layers %d kw %d h %d kh %d relax %d batch %d noise %.2f task %s"
+            % (self.nconvs, self.kw, self.height, self.kh, self.rx_step,
+               self.batch_size, self.grad_noise_scale, self.task))
+    msg2 = "data %d %s" % (self.train_data_size, msg1)
+    msg3 = ("cut %.2f pull %.3f lr %.2f iw %.2f cr %.2f nm %d d%.4f gn %.2f %s" %
+            (self.cutoff, self.pull_incr, self.lr, self.init_weight,
+            self.curriculum_bound, self.nmaps, self.dropout, self.max_grad_norm, msg2))
+    return msg3
+
+
 
 def conv_linear(args, kw, kh, nin, nout, do_bias, bias_start, prefix):
   """Convolutional linear map."""
@@ -38,21 +73,35 @@ def conv_linear(args, kw, kh, nin, nout, do_bias, bias_start, prefix):
     return res + bias_term + bias_start
 
 
+def tf_cut_function(val, vlo, vhi, glo, ghi):
+  if vlo is None:
+    return val
+  a = tf.clip_by_value(val, vlo, vhi)
+  if glo is None:
+    return a
+  assert ghi >= vhi > vlo >= glo
+  zz = tf.clip_by_value(val, glo, ghi)
+  return zz - tf.stop_gradient(zz - a)
+
 def sigmoid_cutoff(x, cutoff):
   """Sigmoid with cutoff, e.g., 1.2sigmoid(x) - 0.1."""
   y = tf.sigmoid(x)
   if cutoff < 1.01: return y
   d = (cutoff - 1.0) / 2.0
-  return tf.minimum(1.0, tf.maximum(0.0, cutoff * y - d))
+  z = cutoff * y - d
+  dd = (FLAGS.smooth_grad - 1.0) / 2.0 if FLAGS.smooth_grad else None
+  glo, ghi = (-dd, 1+dd) if FLAGS.smooth_grad else (None, None)
+  return tf_cut_function(z, 0, 1, glo, ghi)
 
 
 def tanh_cutoff(x, cutoff):
   """Tanh with cutoff, e.g., 1.1tanh(x) cut to [-1. 1]."""
   y = tf.tanh(x)
   if cutoff < 1.01: return y
-  d = (cutoff - 1.0) / 2.0
-  return tf.minimum(1.0, tf.maximum(-1.0, (1.0 + d) * y))
-
+  z = cutoff * y
+  tcut = FLAGS.smooth_grad_tanh
+  glo, ghi = (-tcut, tcut) if tcut else (None, None)
+  return tf_cut_function(z, -1, 1, glo, ghi)
 
 def conv_gru(inpts, mem, kw, kh, nmaps, cutoff, prefix):
   """Convolutional GRU."""
@@ -60,16 +109,24 @@ def conv_gru(inpts, mem, kw, kh, nmaps, cutoff, prefix):
     return conv_linear(args, kw, kh, len(args) * nmaps, nmaps, True, bias_start,
                        prefix + "/" + suffix)
   reset = sigmoid_cutoff(conv_lin(inpts + [mem], "r", 1.0), cutoff)
-  # candidate = tanh_cutoff(conv_lin(inpts + [reset * mem], "c", 0.0), cutoff)
-  candidate = tf.tanh(conv_lin(inpts + [reset * mem], "c", 0.0))
+  candidate = tanh_cutoff(conv_lin(inpts + [reset * mem], "c", 0.0), FLAGS.cutoff_tanh)
+  # candidate = tf.tanh(conv_lin(inpts + [reset * mem], "c", 0.0))
   gate = sigmoid_cutoff(conv_lin(inpts + [mem], "g", 1.0), cutoff)
   return gate * mem + (1 - gate) * candidate
 
+def gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, suffix):
+  # Do nconvs-many CGRU steps.
+  for layer in xrange(nconvs):
+    cur = conv_gru([], cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix))
+    cur *= mask
+  return cur
 
-@tf.RegisterGradient("CustomIdG")
-def _custom_id_grad(_, grads):
-  return grads
-
+try:
+  @tf.RegisterGradient("CustomIdG")
+  def _custom_id_grad(_, grads):
+    return grads
+except KeyError as e: # Happens on reload
+  pass
 
 def quantize(t, quant_scale, max_value=1.0):
   """Quantize a tensor t with each element in [-max_value, max_value]."""
@@ -143,19 +200,31 @@ def check_for_zero(sparse):
 class NeuralGPU(object):
   """Neural GPU Model."""
 
-  def __init__(self, nmaps, vec_size, niclass, noclass, dropout, rx_step,
-               max_grad_norm, cutoff, nconvs, kw, kh, height, mode,
-               learning_rate, pull, pull_incr, min_length, act_noise=0.0):
+  def __init__(self, config, act_noise=0.0):
+    nmaps = config.nmaps
+    vec_size = config.nmaps
+    noclass = config.noclass
+    cutoff = config.cutoff
+    nconvs = config.nconvs
+    kw = config.kw
+    kh = config.kh
+    height = config.height
+
+    self.config = config
+
     # Feeds for parameters and ops to update them.
     self.global_step = tf.Variable(0, trainable=False)
-    self.cur_length = tf.Variable(min_length, trainable=False)
+    self.cur_length = tf.Variable(config.min_length, trainable=False)
     self.cur_length_incr_op = self.cur_length.assign_add(1)
-    self.lr = tf.Variable(float(learning_rate), trainable=False)
+    self.lr = tf.Variable(float(config.lr), trainable=False)
     self.lr_decay_op = self.lr.assign(self.lr * 0.98)
-    self.pull = tf.Variable(float(pull), trainable=False)
-    self.pull_incr_op = self.pull.assign(self.pull * pull_incr)
+    self.pull = tf.Variable(float(config.pull), trainable=False)
+    self.pull_incr_op = self.pull.assign(self.pull * config.pull_incr)
     self.do_training = tf.placeholder(tf.float32, name="do_training")
     self.noise_param = tf.placeholder(tf.float32, name="noise_param")
+
+    self.binary_activation = tf.Variable(1.0, trainable=False)
+    self.binary_activation_decay_op = self.binary_activation.assign(self.binary_activation * config.binary_annealing)
 
     # Feeds for inputs, targets, outputs, losses, etc.
     self.input = []
@@ -167,19 +236,20 @@ class NeuralGPU(object):
     self.losses = []
     self.grad_norms = []
     self.updates = []
+    self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
 
     # Computation.
     inp0_shape = tf.shape(self.input[0])
     batch_size = inp0_shape[0]
     with tf.device("/cpu:0"):
       emb_weights = tf.get_variable(
-          "embedding", [niclass, vec_size],
+          "embedding", [config.niclass, vec_size],
           initializer=tf.random_uniform_initializer(-1.7, 1.7))
       e0 = tf.scatter_update(emb_weights,
                              tf.constant(0, dtype=tf.int32, shape=[1]),
                              tf.zeros([1, vec_size]))
 
-    adam = tf.train.AdamOptimizer(self.lr, epsilon=1e-4)
+    adam = tf.train.AdamOptimizer(self.lr, epsilon=1e-4, use_locking=True)
 
     # Main graph creation loop, for every bin in data_utils.
     self.steps = []
@@ -223,19 +293,46 @@ class NeuralGPU(object):
       first = tf.concat(2, first)
 
       # Computation steps.
-      keep_prob = 1.0 - self.do_training * (dropout * 8.0 / float(length))
+      keep_prob = 1.0 - self.do_training * (config.dropout * 8.0 / float(length))
       step = [tf.nn.dropout(first, keep_prob) * mask]
       act_noise_scale = act_noise * self.do_training * self.pull
       outputs = []
+      self.attention_probs = []
       for it in xrange(length):
-        with tf.variable_scope("RX%d" % (it % rx_step)) as vs:
-          if it >= rx_step:
+        with tf.variable_scope("RX%d" % (it % config.rx_step)) as vs:
+          if it >= config.rx_step:
             vs.reuse_variables()
           cur = step[it]
-          # Do nconvs-many CGRU steps.
-          for layer in xrange(nconvs):
-            cur = conv_gru([], cur, kw, kh, nmaps, cutoff, "cgru_%d" % layer)
-            cur *= mask
+
+
+          if FLAGS.do_attention:
+            cur_att = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
+            attention_vals = []
+            logit_table = []
+            for i in range(3):
+              key = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'key%s' % i)
+              val = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'val%s' % i)
+              if i in [0,1]:
+                val = tf.select(tf.equal(self.task, i), val, tf.stop_gradient(val))
+                key = tf.select(tf.equal(self.task, i), key, tf.stop_gradient(key))
+              logit = tf.reduce_sum(cur_att * key, [1,2,3])
+              logit_table.append(tf.expand_dims(logit, 1))
+              attention_vals.append(tf.expand_dims(val, 0))
+
+            attention_probs = tf.transpose(tf.nn.softmax(tf.concat(1, logit_table)))
+            self.attention_probs.append(attention_probs)
+            attention_vals = tf.concat(0, attention_vals)
+            expanded_probs = attention_probs # add 3 more dimensions
+            for i in range(3):
+              expanded_probs = tf.expand_dims(expanded_probs, -1)
+            cur = tf.reduce_sum(expanded_probs * attention_vals, [0])
+          else:
+            cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
+
+          if self.config.do_binary:
+            binary_cur = tf.sign(cur) - tf.stop_gradient(tf.sign(cur) - cur)
+            cur = self.binary_activation * cur + (1 - self.binary_activation) * binary_cur
+
           outputs.append(tf.slice(cur, [0, 0, 0, 0], [-1, -1, 1, -1]))
           cur = tf.nn.dropout(cur, keep_prob)
           if act_noise > 0.00001:
@@ -252,30 +349,34 @@ class NeuralGPU(object):
       external_output = [tf.reshape(o, [-1, noclass])
                          for o in list(tf.split(1, length, output))]
       external_output = [tf.nn.softmax(o) for o in external_output]
+      # external_output[1] == character 1 for all batches
+      #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
       self.outputs.append(external_output)
-
       # Calculate cross-entropy loss and normalize it.
       targets = tf.concat(1, [make_dense(self.target[l], noclass)
                               for l in xrange(length)])
       targets = tf.reshape(targets, [-1, noclass])
+      real_targets = ((0.5*targets + 0.5*tf.stop_gradient(
+        tf.nn.softmax(tf.reshape(output, [-1, noclass])))) if
+                      FLAGS.smooth_targets else targets)
       xent = tf.reshape(tf.nn.softmax_cross_entropy_with_logits(
-          tf.reshape(output, [-1, noclass]), targets), [-1, length])
+          tf.reshape(output, [-1, noclass]), real_targets), [-1, length])
       perp_loss = tf.reduce_sum(xent * weights)
       perp_loss /= tf.cast(batch_size, dtype=tf.float32)
       perp_loss /= length
 
       # Final loss: cross-entropy + shared parameter relaxation part.
-      relax_dist, self.avg_op = relaxed_distance(rx_step)
+      relax_dist, self.avg_op = relaxed_distance(config.rx_step)
       total_loss = perp_loss + relax_dist * self.pull
       self.losses.append(perp_loss)
 
       # Gradients and Adam update operation.
-      if length == data_utils.bins[0] or (mode == 0 and
+      if length == data_utils.bins[0] or (config.mode == 0 and
                                           length < data_utils.bins[-1] + 1):
         data_utils.print_out("Creating backward for bin of length %d." % length)
         params = tf.trainable_variables()
         grads = tf.gradients(total_loss, params)
-        grads, norm = tf.clip_by_global_norm(grads, max_grad_norm)
+        grads, norm = tf.clip_by_global_norm(grads, config.max_grad_norm)
         self.grad_norms.append(norm)
         for grad in grads:
           if isinstance(grad, tf.Tensor):
@@ -288,35 +389,47 @@ class NeuralGPU(object):
     self.saver = tf.train.Saver(tf.all_variables())
 
   def step(self, sess, inp, target, do_backward, noise_param=None,
-           get_steps=False):
+           get_steps=False, taskid=None):
     """Run a step of the network."""
     assert len(inp) == len(target)
     length = len(target)
     feed_in = {}
-    feed_in[self.noise_param.name] = noise_param if noise_param else 0.0
-    feed_in[self.do_training.name] = 1.0 if do_backward else 0.0
-    feed_out = []
+    feed_in[self.noise_param] = noise_param if noise_param else 0.0
+    feed_in[self.do_training] = 1.0 if do_backward else 0.0
+    feed_in[self.task] = taskid
+    feed_out = {}
     index = len(data_utils.bins)
     if length < data_utils.bins[-1] + 1:
       index = data_utils.bins.index(length)
     if do_backward:
-      feed_out.append(self.updates[index])
-      feed_out.append(self.grad_norms[index])
-    feed_out.append(self.losses[index])
+      feed_out['back_update'] = self.updates[index]
+      feed_out['grad_norm'] = self.grad_norms[index]
+    feed_out['loss'] = self.losses[index]
     for l in xrange(length):
-      feed_in[self.input[l].name] = inp[l]
-    for l in xrange(length):
-      feed_in[self.target[l].name] = target[l]
-      feed_out.append(self.outputs[index][l])
+      feed_in[self.input[l]] = inp[l]
+      feed_in[self.target[l]] = target[l]
+    feed_out['output'] = self.outputs[index][:length]
     if get_steps:
-      for l in xrange(length+1):
-        feed_out.append(self.steps[index][l])
-    res = sess.run(feed_out, feed_in)
-    offset = 0
-    norm = None
-    if do_backward:
-      offset = 2
-      norm = res[1]
-    outputs = res[offset + 1:offset + 1 + length]
-    steps = res[offset + 1 + length:] if get_steps else None
-    return res[offset], outputs, norm, steps
+      feed_out['step'] = self.steps[index][:length+1]
+    if FLAGS.do_attention:
+      feed_out['attention'] = self.attention_probs
+    res = data_utils.sess_run_dict(sess, feed_out, feed_in)
+    return NeuralGPUResult(res, inp, target, taskid)
+
+class NeuralGPUResult(object):
+  grad_norm = None
+  back_update = None
+  loss = None
+  output = None
+  step = None
+  attention = None
+
+  def __init__(self, vals, inp, target, taskid):
+    self.__dict__.update(vals)
+    self.input = inp
+    self.target = target
+    self.taskid = taskid
+
+  def accuracy(self, nprint=0):
+    batch_size = self.input.shape[1]
+    return data_utils.accuracy(self.input, self.output, self.target, batch_size, nprint)

@@ -69,41 +69,109 @@ def add(n1, n2, base=10):
   if res: return res
   return [0]
 
+def to_base(num, b):
+  ans = []
+  while num:
+    ans.append(num%b)
+    num //= b
+  return list(ans or [0])
 
-def init_data(task, length, nbr_cases, nclass):
-  """Data initialization."""
-  def rand_pair(l, task):
+def from_base(lst, b):
+  num = 0
+  for v in lst[::-1]:
+    num = num*b + v
+  return num
+
+generators = {}
+
+class DataGenerator(object):
+  nclass = 33
+
+  def rand_pair(self, length):
     """Random data pair for a task. Total length should be <= l."""
-    k = (l-1)/2
-    base = 10
-    if task[0] == "b": base = 2
-    if task[0] == "q": base = 4
-    d1 = [np.random.randint(base) for _ in xrange(k)]
-    d2 = [np.random.randint(base) for _ in xrange(k)]
-    if task in ["add", "badd", "qadd"]:
-      res = add(d1, d2, base)
-    elif task in ["mul", "bmul"]:
-      d1n = sum([d * (base ** i) for i, d in enumerate(d1)])
-      d2n = sum([d * (base ** i) for i, d in enumerate(d2)])
-      if task == "bmul":
-        res = [int(x) for x in list(reversed(str(bin(d1n * d2n))))[:-2]]
-      else:
-        res = [int(x) for x in list(reversed(str(d1n * d2n)))]
-    else:
-      sys.exit()
-    sep = [12]
-    if task in ["add", "badd", "qadd"]: sep = [11]
-    inp = [d + 1 for d in d1] + sep + [d + 1 for d in d2]
-    return inp, [r + 1 for r in res]
+    raise NotImplementedError()
 
-  def rand_dup_pair(l):
-    """Random data pair for duplication task. Total length should be <= l."""
+  def rand_triple(self, length):
+    inpt, outp = self.rand_pair(length)
+    return inpt, outp, 0
+
+  def get_batch(self, length, batch_size):
+    pad_length = pad(length)
+    data_triples = [self.rand_triple(length) for _ in xrange(batch_size)]
+    padded_data = np.array([[x + [0]*(pad_length - len(x))
+                             for x in lst[:2]]
+                            for lst in data_triples])
+    # batch_size x 3 x length
+    # -> 3 x length x batch_size
+    inpt, outp = padded_data.transpose([1,2,0])
+    return inpt, outp, [x[2] for x in data_triples]
+
+  def _initialize(self, nclass):
+    self.nclass = nclass
+
+
+class OpGenerator(DataGenerator):
+  def __init__(self, base, f, sep):
+    self.base = base
+    self.f = f
+    self.sep = sep
+
+  def rand_pair(self, l):
+    k = (l-1)//2
+    n1 = random.randint(0, self.base**k-1)
+    n2 = random.randint(0, self.base**k-1)
+    result = self.f(n1, n2)
+    inp = ([x+1 for x in to_base(n1, self.base)] + [self.sep] +
+           [x+1 for x in to_base(n2, self.base)])
+    outp = [x+1 for x in to_base(result, self.base)]
+    return inp, outp
+
+generators.update(dict(add=OpGenerator(10, np.add, 11),
+                       badd=OpGenerator(2, np.add, 11),
+                       qadd=OpGenerator(4, np.add, 11),
+                       mul=OpGenerator(10, np.multiply, 12),
+                       bmul=OpGenerator(2, np.multiply, 12),
+                       qmul=OpGenerator(4, np.multiply, 12)))
+
+class FGenerator(DataGenerator):
+  def __init__(self, f):
+    self.f = f
+
+  def rand_pair(self, l):
+    x = np.random.randint(self.nclass - 1, size=l) + 1
+    return list(x), list(self.f(x))
+
+generators.update(dict(rev=FGenerator(lambda l: l[::-1]),
+                       sort=FGenerator(sorted),
+                       id=FGenerator(lambda l: l),
+                       ))
+
+
+class DupGenerator(DataGenerator):
+  def rand_pair(self, l):
     k = l/2
-    x = [np.random.randint(nclass - 1) + 1 for _ in xrange(k)]
+    x = [np.random.randint(self.nclass - 1) + 1 for _ in xrange(k)]
     inp = x + [0 for _ in xrange(l - k)]
     res = x + x + [0 for _ in xrange(l - 2*k)]
     return inp, res
 
+class MixGenerator(DataGenerator):
+  def __init__(self, gens):
+    self.sets = gens
+
+  def rand_triple(self, length):
+    i = np.random.randint(len(self.sets))
+    pair = self.sets[i].rand_pair(length)
+    return pair[0], pair[1], i
+
+generators.update(dict(dup=DupGenerator(),
+                       mix=MixGenerator([generators[x] for x in 'badd bmul'.split()]),
+                       ))
+
+def init_data(task, length, nbr_cases, nclass):
+  """Data initialization."""
+  assert False
+  print "Creating cases", nbr_cases, task, length, nclass
   def rand_rev2_pair(l):
     """Random data pair for reverse2 task. Total length should be <= l."""
     inp = [(np.random.randint(nclass - 1) + 1,
@@ -132,8 +200,8 @@ def init_data(task, length, nbr_cases, nclass):
 
   def spec(inp):
     """Return the target given the input for some tasks."""
-    if task == "sort":
-      return sorted(inp)
+    if False:
+      pass
     elif task == "id":
       return inp
     elif task == "rev":
@@ -219,6 +287,9 @@ def to_id(s):
 
 
 def get_batch(max_length, batch_size, do_train, task, offset=None, preset=None):
+  return generators[task].get_batch(max_length, batch_size)
+
+def get_batch_old(max_length, batch_size, do_train, task, offset=None, preset=None):
   """Get a batch of data, training or testing."""
   inputs = []
   targets = []
@@ -314,3 +385,35 @@ def safe_exp(x):
   if x < 100: perp = math.exp(x)
   if perp > 10000: return 10000
   return perp
+
+def reversible_flatten(lst):
+  lengths = []
+  result = []
+  for w in lst:
+    if isinstance(w, list):
+      lengths.append(len(w))
+      result.extend(w)
+    else:
+      lengths.append(-1)
+      result.append(w)
+  return result, lengths
+
+def reverse_flatten(flattened, lengths):
+  ans = []
+  i = 0
+  for l in lengths:
+    if l == -1:
+      ans.append(flattened[i])
+      i += 1
+    else:
+      ans.append(flattened[i:i+l])
+      i += l
+  return ans
+
+def sess_run_dict(sess, fetches, feed_dict):
+  keys = list(fetches.keys())
+  wanted_input_list = [fetches[k] for k in keys]
+  input_list, lengths = reversible_flatten(wanted_input_list)
+  res = sess.run(input_list, feed_dict)
+  unflattened_res = reverse_flatten(res, lengths)
+  return dict(zip(keys, unflattened_res))
