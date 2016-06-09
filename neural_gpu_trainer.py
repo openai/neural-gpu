@@ -53,7 +53,7 @@ def define_flags():
   tf.app.flags.DEFINE_integer("max_length", 21, "Maximum length.")
   tf.app.flags.DEFINE_integer("rx_step", 6, "Relax that many recursive steps.")
   tf.app.flags.DEFINE_integer("random_seed", 125459, "Random seed.")
-  tf.app.flags.DEFINE_integer("time_till_ckpt", 50, "How many tests per checkpoint")
+  tf.app.flags.DEFINE_integer("time_till_ckpt", 10, "How many tests per checkpoint")
   tf.app.flags.DEFINE_integer("nconvs", 2, "How many convolutions / 1 step.")
   tf.app.flags.DEFINE_integer("kw", 3, "Kernel width.")
   tf.app.flags.DEFINE_integer("kh", 3, "Kernel height.")
@@ -96,10 +96,10 @@ def log_parameters(checkpoint_dir):
       data.print_out('ERROR: restarted with changed argv')
       data.print_out('WAS %s' % old_argv)
       data.print_out('NOW %s' % new_argv)
-      raise Exception()
+      raise ValueError("Bad log dir")
     else:
-      print "Even though the argv didn't change, we'll still kill you."
-      raise Exception()
+      print 
+      raise ValueError("Even though the argv didn't change, we'll still kill you.")
 
   with open(command_fname, 'w') as f:
     f.write(' '.join(sys.argv)+'\n')
@@ -123,10 +123,12 @@ def load_model(sess, checkpoint_dir):
   ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
   if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
     model.saver.restore(sess, ckpt.model_checkpoint_path)
-  return (config, model)
+  return model
 
-def initialize(sess):
-  """Initialize data and model."""
+def get_checkpoint_dir():
+  return FLAGS.train_dir + ('-seed%s-pid%s' % (FLAGS.random_seed, os.getpid()))
+
+def get_config_from_flags(checkpoint_dir = None):
   # Set random seed.
   seed = FLAGS.random_seed + max(0, FLAGS.jobid)
   tf.set_random_seed(seed)
@@ -134,13 +136,15 @@ def initialize(sess):
   np.random.seed(seed)
 
   # Create checkpoint directory if it does not exist.
-  checkpoint_dir = FLAGS.train_dir + ('-seed%s-pid%s' % (seed, os.getpid()))
+  if checkpoint_dir is None:
+    checkpoint_dir = get_checkpoint_dir()
   if not gfile.IsDirectory(checkpoint_dir):
     data.print_out("Creating checkpoint directory %s." % checkpoint_dir)
     gfile.MkDir(checkpoint_dir)
 
   if FLAGS.jobid >= 0:
     data.log_filename = os.path.join(checkpoint_dir, "log%d" % FLAGS.jobid)
+
   data.print_out("NN ", newline=False)
 
   config = neural_gpu.NeuralConfig(FLAGS)
@@ -150,19 +154,25 @@ def initialize(sess):
     data.bins = data.bins[:-1]
   assert data.bins[0] > FLAGS.rx_step
   data.forward_max = max(FLAGS.forward_max, data.bins[-1])
-  nclass = min(FLAGS.niclass, FLAGS.noclass)
-  data_size = FLAGS.train_data_size if FLAGS.mode == 0 else 1000
 
-  # Print out parameters.
+  return config
+
+def initialize(sess, checkpoint_dir=None):
+  """Initialize data and model."""
+  config = get_config_from_flags(checkpoint_dir)
   data.print_out(str(config))
 
+  if checkpoint_dir is None:
+    checkpoint_dir = get_checkpoint_dir()
   log_parameters(checkpoint_dir)
 
   # Initialize data for each task.
-  tasks = FLAGS.task.split("-")
+  nclass = min(config.niclass, config.noclass)
+  tasks = config.task.split("-")
   data_generators = [data.generators[t] for t in tasks]
   for g in data_generators:
     g._initialize(nclass)
+  #data_size = FLAGS.train_data_size if FLAGS.mode == 0 else 1000
   #goal_lengths = [l for l in xrange(max_length + EXTRA_EVAL - 1)] + [data.forward_max]
   # for t in tasks:
   #   for l in xrange(max_length + EXTRA_EVAL - 1):
@@ -179,7 +189,6 @@ def initialize(sess):
   data.print_out("Created model.")
   sess.run(tf.initialize_all_variables())
   data.print_out("Initialized variables.")
-  global_norm = tf.global_norm(tf.trainable_variables())
 
   # Load model from parameters if a checkpoint exists.
   ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
@@ -188,15 +197,19 @@ def initialize(sess):
                    % ckpt.model_checkpoint_path)
     model.saver.restore(sess, ckpt.model_checkpoint_path)
 
+  curriculum = neural_gpu.DefaultCurriculum(data_generators, model.config)
+  model.curriculum = curriculum
+
   # Return the model and needed variables.
-  return (model, min_length, max_length, checkpoint_dir, config.curriculum_bound)
+  return model
 
 
 def single_test(l, model, sess, task, nprint, batch_size, print_out=True,
-                offset=None, get_steps=False):
+                offset=None, get_steps=False, batch=None):
   """Test model on test data of length l using the given session."""
-  inpt, target, taskid = data.get_batch(l, batch_size, False, task, offset)
-  result = model.step(sess, inpt, target, False, get_steps=get_steps, taskid=taskid)
+  if batch is None:
+    batch, _ = model.curriculum.draw_example(batch_size, l)
+  result = model.step(sess, batch, False, get_steps=get_steps)
   errors, total, seq_err = result.accuracy(nprint)
   #errors, total, seq_err = data.accuracy(inpt, result, target, batch_size, nprint)
   seq_err = float(seq_err) / batch_size
@@ -205,7 +218,7 @@ def single_test(l, model, sess, task, nprint, batch_size, print_out=True,
   if print_out:
     data.print_out("  %s len %d errors %.2f sequence-errors %.2f"
                    % (task, l, 100*errors, 100*seq_err))
-  return errors, seq_err, (result.step, inpt, [np.argmax(o, axis=1) for o in result.output])
+  return errors, seq_err, result
 
 
 def multi_test(l, model, sess, task, nprint, batch_size, offset=None):
@@ -242,147 +255,126 @@ class Timer(object):
   def done(self):
     self.print_fn('Finish %s, took %s seconds' % (self.label, time.time()-self.startt))
 
+def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
+  curriculum = model.curriculum
+  global_step, = sess.run( [model.global_step])
+  acc_loss, acc_total, acc_errors, acc_seq_err = 0.0, 0, 0, 0
+  acc_grad_norm, step_count, step_time = 0.0, 0, 0.0
+  for _ in xrange(nsteps):
+    global_step += 1
 
-def train():
-  """Train the model."""
-  batch_size = FLAGS.batch_size
-  tasks = FLAGS.task.split("-")
-  with tf.Session() as sess:
-    timer = Timer('initialization')
-    (model, min_length, max_length, checkpoint_dir,
-     curriculum, _) = initialize(sess)
-    quant_op = neural_gpu.quantize_weights_op(512, 8)
-    max_cur_length = min(min_length + 3, max_length)
-    prev_acc_perp = [1000000 for _ in xrange(3)]
-    prev_seq_err = 1.0
+    batch, l = model.curriculum.draw_example(batch_size)
+
+    # Run a step and time it.
+    start_time = time.time()
+    result = model.step(sess, batch, True)
+    step_time += time.time() - start_time
+    acc_grad_norm += float(result.grad_norm)
+
+    # Accumulate statistics only if we did not exceed curriculum length.
+    if l < curriculum.max_cur_length + 1:
+      step_count += 1
+      acc_loss += result.loss
+      errors, total, seq_err = result.accuracy()
+      acc_total += total
+      acc_errors += errors
+      acc_seq_err += seq_err
+
+  # Normalize and print out accumulated statistics.
+  acc_loss /= step_count
+  step_time /= FLAGS.steps_per_epoch
+  acc_seq_err = float(acc_seq_err) / (step_count * batch_size)
+  prev_seq_err = max(0.0, acc_seq_err - 0.02)  # No noise at error < 2%.
+  acc_errors = float(acc_errors) / acc_total if acc_total > 0 else 1.0
+  msg1 = "step %d step-time %.2f" % (global_step, step_time)
+  msg2 = "lr %.8f pull %.3f" % (model.lr, model.pull)
+  msg3 = ("%s %s grad-norm %.8f"
+          % (msg1, msg2, acc_grad_norm / FLAGS.steps_per_epoch))
+  data.print_out("%s len %d ppx %.8f errors %.2f sequence-errors %.2f" %
+                 (msg3, curriculum.max_cur_length, data.safe_exp(acc_loss),
+                  100*acc_errors, 100*acc_seq_err))
+
+  decent = (acc_seq_err < model.config.curriculum_bound)
+  extended = curriculum.consider_extending(acc_seq_err)
+  # If errors are below the curriculum threshold, move curriculum forward.
+  if decent:
+    if FLAGS.quantize:
+      # Quantize weights.
+      data.print_out("  Quantizing parameters.")
+      sess.run([model.quant_op])
+    # Either increase pull or, if it's large, average parameters.
+    if model.pull < 0.1:
+      model.pull *= model.config.pull_incr
+    else:
+      data.print_out("  Averaging parameters.")
+      sess.run(model.avg_op)
+      if acc_seq_err < (model.config.curriculum_bound / 3.0):
+        model.lr *= 0.98
+
+    model.binary_activation *= model.config.binary_annealing
+
+  # Lower learning rate if we're worse than the last 3 checkpoints.
+  acc_perp = data.safe_exp(acc_loss)
+  if acc_perp > thresh:
+    data.print_out("Lower learning rate: %s %s" % (acc_perp, thresh))
+    model.lr *= 0.98
+  return (extended, acc_perp)
+
+def run_evaluation(sess, model, batch_size):
+  global_step, = sess.run( [model.global_step])
+  for task in model.curriculum.tasks():
+    errors = []
+    for length, batch in model.curriculum.test_examples(batch_size, task):
+      _, seq_err, _ = single_test(length, model, sess, task,
+                                  FLAGS.nprint, batch_size, batch=batch)
+      errors.append(seq_err)
+      if len(errors) >= 4 and min(errors[-4:]) == 1:
+        break
+    if seq_err < 0.05:  # Run larger test if we're good enough.
+      _, seq_err = multi_test(data.forward_max, model, sess, task,
+                              FLAGS.nprint, batch_size * 4)
+      data.print_out("LARGE ERROR: %s %s"  % (global_step, seq_err))
+      log_output.write('%s %s\n' % (global_step, seq_err))
+  if seq_err < 0.01:  # Super-large test on 1-task large-forward models.
+    if data.forward_max > 4000 and len(tasks) == 1:
+      multi_test(data.forward_max, model, sess, task, FLAGS.nprint,
+                 batch_size * 16, 0)
+
+def train_loop(sess, model, batch_size, checkpoint_dir):
+  time_till_ckpt = FLAGS.time_till_ckpt
+  # Main training loop.
+  accuracies = [1e4]*3
+  while True:
+    data.print_out("Reminder: checkpoint dir %s" % checkpoint_dir)
+    timer = Timer("training steps")
+    extended, acc = train_for_a_bit(sess, model, batch_size, FLAGS.steps_per_epoch,
+                                    max(accuracies[-3:]))
+    accuracies.append(acc)
     timer.done()
 
-    time_till_ckpt = FLAGS.time_till_ckpt
-    # Main traning loop.
-    while True:
-      data.print_out("Reminder: checkpoint dir %s" % checkpoint_dir)
-      timer = Timer("training steps")
-      global_step, pull, max_cur_length, learning_rate = sess.run(
-          [model.global_step, model.pull, model.cur_length, model.lr])
-      acc_loss, acc_total, acc_errors, acc_seq_err = 0.0, 0, 0, 0
-      acc_grad_norm, step_count, step_time = 0.0, 0, 0.0
-      for _ in xrange(FLAGS.steps_per_epoch):
-        global_step += 1
-        task = random.choice(tasks)
-
-        # Select the length for curriculum learning.
-        l = np.random.randint(max_cur_length - min_length + 1) + min_length
-        # Prefer longer stuff 60% of time.
-        if np.random.randint(100) < 60:
-          l1 = np.random.randint(max_cur_length - min_length+1) + min_length
-          l = max(l, l1)
-        # Mixed curriculum learning: in 25% of cases go to any larger length.
-        if np.random.randint(100) < 25:
-          l1 = np.random.randint(max_length - min_length + 1) + min_length
-          l = max(l, l1)
-
-        # Run a step and time it.
-        start_time = time.time()
-        inp, target, taskid = data.get_batch(l, batch_size, True, task)
-        noise_param = math.sqrt(math.pow(global_step, -0.55) *
-                                prev_seq_err) * FLAGS.grad_noise_scale
-        result = model.step(sess, inp, target, True, noise_param, taskid=taskid)
-        step_time += time.time() - start_time
-        acc_grad_norm += float(result.grad_norm)
-
-        # Accumulate statistics only if we did not exceed curriculum length.
-        if l < max_cur_length + 1:
-          step_count += 1
-          acc_loss += result.loss
-          errors, total, seq_err = result.accuracy()
-          acc_total += total
-          acc_errors += errors
-          acc_seq_err += seq_err
-
-      global_norm = tf.global_norm(tf.trainable_variables())
-
+    # Save checkpoint.
+    time_till_ckpt -= 1
+    if time_till_ckpt == 0:
+      time_till_ckpt = FLAGS.time_till_ckpt
+      timer = Timer("saving checkpoint")
+      checkpoint_path = os.path.join(checkpoint_dir, "neural_gpu.ckpt")
+      global_step, = sess.run( [model.global_step])
+      model.saver.save(sess, checkpoint_path,
+                       global_step=model.global_step)
       timer.done()
-      # Normalize and print out accumulated statistics.
-      acc_loss /= step_count
-      step_time /= FLAGS.steps_per_epoch
-      acc_seq_err = float(acc_seq_err) / (step_count * batch_size)
-      prev_seq_err = max(0.0, acc_seq_err - 0.02)  # No noise at error < 2%.
-      acc_errors = float(acc_errors) / acc_total if acc_total > 0 else 1.0
-      msg1 = "step %d step-time %.2f" % (global_step, step_time)
-      msg2 = "lr %.8f pull %.3f" % (learning_rate, pull)
-      msg3 = ("%s %s grad-norm %.8f"
-              % (msg1, msg2, acc_grad_norm / FLAGS.steps_per_epoch))
-      data.print_out("%s len %d ppx %.8f errors %.2f sequence-errors %.2f" %
-                     (msg3, max_cur_length, data.safe_exp(acc_loss),
-                      100*acc_errors, 100*acc_seq_err))
 
-      # If errors are below the curriculum threshold, move curriculum forward.
-      if curriculum > acc_seq_err:
-        timer = Timer("Extend curriculum %s %s" % (curriculum, acc_seq_err))
-        if FLAGS.quantize:
-          # Quantize weights.
-          data.print_out("  Quantizing parameters.")
-          sess.run([quant_op])
-        # Increase current length (until the next with training data).
-        do_incr = True
-        while do_incr and max_cur_length < max_length:
-          sess.run(model.cur_length_incr_op)
-          # XXX may want this
-          #for t in tasks:
-          #  if data.train_set[t]: do_incr = False
-          do_incr = False
-        # Forget last perplexities if we're not yet at the end.
-        if max_cur_length < max_length:
-          prev_acc_perp.append(1000000)
-        # Either increase pull or, if it's large, average parameters.
-        if pull < 0.1:
-          sess.run(model.pull_incr_op)
-        else:
-          data.print_out("  Averaging parameters.")
-          sess.run(model.avg_op)
-          if acc_seq_err < (curriculum / 3.0):
-            sess.run(model.lr_decay_op)
-            sess.run(model.binary_activation_decay_op)
-        timer.done()
+    # Run evaluation.
+    timer = Timer("running evaluation")
+    run_evaluation(sess, model, batch_size)
+    timer.done()
 
-      # Lower learning rate if we're worse than the last 3 checkpoints.
-      acc_perp = data.safe_exp(acc_loss)
-      if acc_perp > max(prev_acc_perp[-3:]):
-        data.print_out("Lower learning rate: %s %s" % (acc_perp, prev_acc_perp[-3:]))
-        sess.run(model.lr_decay_op)
-      prev_acc_perp.append(acc_perp)
-
-      # Save checkpoint.
-      time_till_ckpt -= 1
-      if time_till_ckpt == 0:
-        time_till_ckpt = FLAGS.time_till_ckpt
-        timer = Timer("saving checkpoint")
-        checkpoint_path = os.path.join(checkpoint_dir, "neural_gpu.ckpt")
-        model.saver.save(sess, checkpoint_path,
-                         global_step=model.global_step)
-        timer.done()
-
-      # Run evaluation.
-      timer = Timer("running evaluation %s" % global_step)
-      bound = data.bins[-1] + 1
-      for t in tasks:
-        l = min_length
-        while l < max_length + EXTRA_EVAL and l < bound:
-          _, seq_err, _ = single_test(l, model, sess, t,
-                                      FLAGS.nprint, batch_size)
-          l += 1
-          #while l < bound + 1 and not data.test_set[t][l]:
-          #  l += 1
-        if seq_err < 0.05:  # Run larger test if we're good enough.
-          _, seq_err = multi_test(data.forward_max, model, sess, t,
-                                  FLAGS.nprint, batch_size * 4)
-          data.print_out("LARGE ERROR: %s %s"  % (global_step, seq_err))
-          log_output.write('%s %s\n' % (global_step, seq_err))
-      if seq_err < 0.01:  # Super-large test on 1-task large-forward models.
-        if data.forward_max > 4000 and len(tasks) == 1:
-          multi_test(data.forward_max, model, sess, tasks[0], FLAGS.nprint,
-                     batch_size * 16, 0)
-      timer.done()
+def start_and_train():
+  """Train the model."""
+  with tf.Session() as sess:
+    timer = Timer('initialization')
+    model = initialize(sess)
+    timer.done()
+    train_loop(sess, model, FLAGS.batch_size, get_checkpoint_dir())
 
 
 def animate(l, test_data, anim_size):
@@ -451,11 +443,11 @@ def evaluate():
   batch_size = FLAGS.batch_size
   tasks = FLAGS.task.split("-")
   with tf.Session() as sess:
-    model, min_length, max_length, _, _ = initialize(sess)
+    model = initialize(sess)
     bound = data.bins[-1] + 1
     for t in tasks:
-      l = min_length
-      while l < max_length + EXTRA_EVAL and l < bound:
+      l = model.config.min_length
+      while l < model.config.max_length + EXTRA_EVAL and l < bound:
         _, seq_err, _ = single_test(l, model, sess, t, FLAGS.nprint,
                                     batch_size)
         l += 1
@@ -464,8 +456,9 @@ def evaluate():
       # Animate.
       if FLAGS.animate:
         anim_size = 2
-        _, _, test_data = single_test(l, model, sess, t, 0, anim_size,
+        _, _, result = single_test(l, model, sess, t, 0, anim_size,
                                       get_steps=True)
+        this_is_broken_because_it_is_the_wrong_format
         animate(l, test_data, anim_size)
       # More tests.
       _, seq_err = multi_test(data.forward_max, model, sess, t, FLAGS.nprint,
@@ -475,33 +468,16 @@ def evaluate():
         multi_test(data.forward_max, model, sess, tasks[0], FLAGS.nprint,
                    batch_size * 64, 0)
 
-
-def interactive():
-  """Interactively probe an existing model."""
-  with tf.Session() as sess:
-    model, _, _, _, _, _ = initialize(sess)
-    sys.stdout.write("Input to Neural GPU, e.g., 0 1. Use -1 for PAD.\n")
-    sys.stdout.write("> ")
-    sys.stdout.flush()
-    inpt = sys.stdin.readline()
-    while inpt:
-      ids = [data.to_id(s) for s in inpt.strip().split()]
-      inpt, target, taskid = data.get_batch(len(ids), 1, False, "",
-                                    preset=(ids, [0 for _ in ids]))
-      _, res, _, _ = model.step(sess, inpt, target, False, taskid=taskid)
-      res = [np.argmax(o, axis=1) for o in res]
-      res = [o for o in res[:len(ids)] if o > 0]
-      print "  " + " ".join([data.to_symbol(output[0]) for output in res])
-      sys.stdout.write("> ")
-      sys.stdout.flush()
-      inpt = sys.stdin.readline()
-
-
 def main(_):
   if FLAGS.mode == 0:
-    train()
+    start_and_train()
   elif FLAGS.mode == 1:
     evaluate()
+  elif FLAGS.mode == 2:
+    with tf.Session() as sess:
+      t = Timer("Starting...")
+      model = initialize(sess)
+      t.done()
   else:
     interactive()
 

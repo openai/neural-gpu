@@ -86,6 +86,7 @@ generators = {}
 
 class DataGenerator(object):
   nclass = 33
+  name = '<unknown task>'
 
   def rand_pair(self, length):
     """Random data pair for a task. Total length should be <= l."""
@@ -167,6 +168,9 @@ class MixGenerator(DataGenerator):
 generators.update(dict(dup=DupGenerator(),
                        mix=MixGenerator([generators[x] for x in 'badd bmul'.split()]),
                        ))
+
+for k in generators:
+  generators[k].name = k
 
 def init_data(task, length, nbr_cases, nclass):
   """Data initialization."""
@@ -284,43 +288,6 @@ def to_id(s):
   if s == "+": return 11
   if s == "*": return 12
   return int(s) + 1
-
-
-def get_batch(max_length, batch_size, do_train, task, offset=None, preset=None):
-  return generators[task].get_batch(max_length, batch_size)
-
-def get_batch_old(max_length, batch_size, do_train, task, offset=None, preset=None):
-  """Get a batch of data, training or testing."""
-  inputs = []
-  targets = []
-  length = max_length
-  if preset is None:
-    cur_set = test_set[task]
-    if do_train: cur_set = train_set[task]
-    while not cur_set[length]:
-      length -= 1
-  pad_length = pad(length)
-  for b in xrange(batch_size):
-    if preset is None:
-      elem = random.choice(cur_set[length])
-      if offset is not None and offset + b < len(cur_set[length]):
-        elem = cur_set[length][offset + b]
-    else:
-      elem = preset
-    inp, target = elem[0], elem[1]
-    assert len(inp) == length
-    inputs.append(inp + [0 for l in xrange(pad_length - len(inp))])
-    targets.append(target + [0 for l in xrange(pad_length - len(target))])
-  res_input = []
-  res_target = []
-  for l in xrange(pad_length):
-    new_input = np.array([inputs[b][l] for b in xrange(batch_size)],
-                         dtype=np.int32)
-    new_target = np.array([targets[b][l] for b in xrange(batch_size)],
-                          dtype=np.int32)
-    res_input.append(new_input)
-    res_target.append(new_target)
-  return res_input, res_target
 
 
 def print_out(s, newline=True):
