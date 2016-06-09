@@ -1,0 +1,50 @@
+##
+## dkLab RealSync configuration file.
+##
+
+# You may load some other config files. It's a good practice to put
+# all user-specific options (e.g. "user" directive, see below) to
+# .realsync-local plus add this file to .gitignore. After that
+# you commit the current .realsync file to your version control
+# system, so developers may just override options in their own local files.
+#load = .realsync-local
+
+# Local directory to be realtime-replicated.
+local = .
+
+# Remote host to replicate to over SSH.
+host = 11.cirrascale.sci.openai-tech.com
+
+# User to connect to the remote host.
+user = ecprice
+
+# Directory at the remote host to replicate files to.
+remote = models/neural_gpu
+
+# Pathname wildcards to be excluded from the replication.
+# Use "*" for any filename character and "**" for any character,
+# including "/" in pathnames.
+exclude = .realsync
+exclude = CVS
+exclude = .git
+exclude = .svn
+exclude = .hg
+exclude = .cache
+exclude = .idea
+exclude = nbproject
+exclude = ~*
+exclude = *.tmp
+exclude = *.pyc
+exclude = *.swp
+
+# You may read exclusion list from e.g. a .gitignore file.
+#exclude_file = .gitignore
+
+# To turn off "synchronization ding" sound, set the following to 1.
+nosound = 0
+
+# Options passed to RSYNC.
+#rsync_options = -rltzxv --delete
+
+# Options passed to SSH.
+#ssh_options = -o Compression=yes -o CompressionLevel=9 -o ConnectTimeout=3 -o ServerAliveInterval=2 -o ServerAliveCountMax=4 -o StrictHostKeyChecking=no
