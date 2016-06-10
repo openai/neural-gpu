@@ -89,9 +89,20 @@ def oneserver_commands(param_sets, session_label, gpus):
 def kill(session_label):
     server_location = 'servers/%s' % session_label
     with open(server_location) as f:
-        servers = f.read().split()
-    for s in servers:
+        gpudict = {}
+        for line in f:
+            host = line.split()[0]
+            indices = line.split()[1:]
+            gpudict[host] = set(indices)
+    for s in gpudict:
         run_remotely(s, ['sh kill_screen.sh %s' % session_label])
+    all_gpus = cirrascale.client.get_gpu_status()
+    to_unreserve = []
+    for g in sum(all_gpus.values(), []):
+        if g.reserved and g.reserved['username'] == USERNAME:
+            if g.host in gpudict and g.index in gpudict[g.host]:
+                to_unreserve.append(g.id)
+    cirrascale.client.release_gpus(to_unreserve)
 
 def run_opportunistically(param_sets, session_label):
     server_location = 'servers/%s' % session_label
@@ -100,7 +111,8 @@ def run_opportunistically(param_sets, session_label):
     gpudict = grab_gpus(len(param_sets))
     print 'Got GPUs:', gpudict
     with open(server_location, 'w') as f:
-        f.write('\n'.join(gpudict.keys()))
+        for h, lst in gpudict.items():
+            print >> f, h, ' '.join(g.index for g in lst)
     done = 0
     for h, gpus in gpudict.items():
         commands = oneserver_commands(param_sets[done:done+len(gpus)],
