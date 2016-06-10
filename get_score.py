@@ -6,6 +6,7 @@ import pandas as pd
 import argparse
 import glob
 import scipy.signal
+import os
 
 parser = argparse.ArgumentParser(description='Get scores')
 

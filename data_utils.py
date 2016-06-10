@@ -88,6 +88,9 @@ class DataGenerator(object):
   nclass = 33
   name = '<unknown task>'
 
+  def is_valid_length(self, l):
+    return True
+
   def rand_pair(self, length):
     """Random data pair for a task. Total length should be <= l."""
     raise NotImplementedError()
@@ -116,6 +119,9 @@ class OpGenerator(DataGenerator):
     self.base = base
     self.f = f
     self.sep = sep
+
+  def is_valid_length(self, l):
+    return l%2 == 1 and l > 1
 
   def rand_pair(self, l):
     k = (l-1)//2

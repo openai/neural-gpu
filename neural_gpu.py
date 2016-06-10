@@ -72,6 +72,9 @@ class DefaultCurriculum(object):
   def tasks(self):
     return [g.name for g in self.generators]
 
+  def is_valid_length(self, l):
+    return any(g.is_valid_length(l) for g in self.generators)
+
   def test_examples(self, batch_size, task_name):
     for g in self.generators:
       if g.name == task_name:
@@ -101,6 +104,8 @@ class DefaultCurriculum(object):
       return False
     if self.max_cur_length < self.max_length:
       self.max_cur_length += 1
+      while not self.is_valid_length(self.max_cur_length) and self.max_cur_length < self.max_length:
+        self.max_cur_length += 1
 
 
 def conv_linear(args, kw, kh, nin, nout, do_bias, bias_start, prefix):

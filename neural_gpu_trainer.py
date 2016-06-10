@@ -272,7 +272,7 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
     acc_grad_norm += float(result.grad_norm)
 
     # Accumulate statistics only if we did not exceed curriculum length.
-    if l < curriculum.max_cur_length + 1:
+    if l <= curriculum.max_cur_length:
       step_count += 1
       acc_loss += result.loss
       errors, total, seq_err = result.accuracy()
