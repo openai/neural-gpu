@@ -99,9 +99,8 @@ class DataGenerator(object):
 
   def rand_pair_padded(self, length):
     pad_length = pad(length)
-    padding = np.zeros(pad_length - length)
     data = self.rand_pair(length)
-    return [np.concatenate([x, padding], axis=-1)
+    return [np.concatenate([x, np.zeros(pad_length - len(x))], axis=-1)
             for x in data]
 
   def get_batch(self, length, batch_size):
@@ -131,7 +130,7 @@ class OpGenerator(DataGenerator):
     inp = np.concatenate([to_base(n1, self.base, k) + 1,
                           [self.sep],
                           to_base(n2, self.base, k) + 1])
-    outp = to_base(result, self.base, l) + 1
+    outp = to_base(result, self.base, l-1) + 1
     return inp, outp
 
 generators.update(dict(add=OpGenerator(10, np.add, 11),
