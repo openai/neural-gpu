@@ -69,12 +69,14 @@ def add(n1, n2, base=10):
   if res: return res
   return [0]
 
-def to_base(num, b):
+def to_base(num, b, l=1):
   ans = []
   while num:
     ans.append(num%b)
     num //= b
-  return list(ans or [0])
+  while len(ans) < l:
+    ans.append(0)
+  return np.array(ans)
 
 def from_base(lst, b):
   num = 0
@@ -128,9 +130,10 @@ class OpGenerator(DataGenerator):
     n1 = random.randint(0, self.base**k-1)
     n2 = random.randint(0, self.base**k-1)
     result = self.f(n1, n2)
-    inp = ([x+1 for x in to_base(n1, self.base)] + [self.sep] +
-           [x+1 for x in to_base(n2, self.base)])
-    outp = [x+1 for x in to_base(result, self.base)]
+    inp = np.concatenate([to_base(n1, self.base, k) + 1,
+                          [self.sep],
+                          to_base(n2, self.base, k) + 1])
+    outp = to_base(result, self.base, l) + 1
     return inp, outp
 
 generators.update(dict(add=OpGenerator(10, np.add, 11),
