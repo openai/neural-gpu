@@ -44,7 +44,7 @@ def getscores_for_fileset(filenames):
     if not len(data):
         return data
     data.values[0] = 1
-    #data = data.interpolate()
+    data = data.interpolate()
     return data
 
 def get_name(fname):
