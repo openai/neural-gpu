@@ -97,20 +97,18 @@ class DataGenerator(object):
     """Random data pair for a task. Total length should be <= l."""
     raise NotImplementedError()
 
-  def rand_triple(self, length):
-    inpt, outp = self.rand_pair(length)
-    return inpt, outp, 0
+  def rand_pair_padded(self, length):
+    pad_length = pad(length)
+    padding = np.zeros(pad_length - length)
+    data = self.rand_pair(length)
+    return [np.concatenate([x, padding], axis=-1)
+            for x in data]
 
   def get_batch(self, length, batch_size):
-    pad_length = pad(length)
-    data_triples = [self.rand_triple(length) for _ in xrange(batch_size)]
-    padded_data = np.array([[x + [0]*(pad_length - len(x))
-                             for x in lst[:2]]
-                            for lst in data_triples])
-    # batch_size x 3 x length
-    # -> 3 x length x batch_size
-    inpt, outp = padded_data.transpose([1,2,0])
-    return inpt, outp, [x[2] for x in data_triples]
+    result = [self.rand_pair_padded(length)
+              for _ in xrange(batch_size)]
+    inp, outp = zip(*result)
+    return inp, outp, [0 for _ in inp]
 
   def _initialize(self, nclass):
     self.nclass = nclass
@@ -169,10 +167,9 @@ class MixGenerator(DataGenerator):
   def __init__(self, gens):
     self.sets = gens
 
-  def rand_triple(self, length):
+  def rand_pair(self, length):
     i = np.random.randint(len(self.sets))
-    pair = self.sets[i].rand_pair(length)
-    return pair[0], pair[1], i
+    return self.sets[i].rand_pair(length)
 
 generators.update(dict(dup=DupGenerator(),
                        mix=MixGenerator([generators[x] for x in 'badd bmul'.split()]),
