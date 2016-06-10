@@ -139,12 +139,12 @@ def check_server_usage(server):
     return procs.split()
 
 def run_remotely(server, commands):
-    print 'ON %s:' % server
+    print 'Running commands %s.' % server
     ssh_cmd = ["ssh", server,
                "cd %s\n%s" % (args.dir, '\n'.join(commands))]
-    print '\n'.join(commands)
+    #print '\n'.join(commands)
     outp = subprocess.check_output(ssh_cmd)
-    print 'DONE!'
+    #print 'DONE!'
     return outp
 
 def run_here(commands):
