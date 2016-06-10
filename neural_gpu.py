@@ -82,7 +82,8 @@ class DefaultCurriculum(object):
     else:
       raise KeyError("No such task")
     for l in np.arange(self.min_length, self.max_length + 1):
-      yield (l, self.draw_example(batch_size, l)[0])
+      if self.is_valid_length(l):
+        yield (l, self.draw_example(batch_size, l)[0])
 
   def draw_example(self, batch_size, l=None):
     generator = random.choice(self.generators)
