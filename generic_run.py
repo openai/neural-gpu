@@ -25,7 +25,7 @@ smoothing:
 
 """
 PROGRAM='neural_gpu_trainer.py'
-
+DIR='models/neural_gpu'
 USERNAME = os.environ['USER']
 
 def find_free_gpus(num_needed):
@@ -139,7 +139,7 @@ def check_server_usage(server):
 def run_remotely(server, commands):
     print 'ON %s:' % server
     ssh_cmd = ["ssh", server,
-               "cd models/neural_gpu\n%s" % '\n'.join(commands)]
+               "cd %s\n%s" % (DIR, '\n'.join(commands))]
     print '\n'.join(commands)
     outp = subprocess.check_output(ssh_cmd)
     print 'DONE!'

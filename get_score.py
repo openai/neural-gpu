@@ -9,7 +9,7 @@ import scipy.signal
 
 parser = argparse.ArgumentParser(description='Get scores')
 
-parser.add_argument("--task", type=str, default='print')
+parser.add_argument("--task", type=str, default='plot')
 parser.add_argument("--title", type=str, default='')
 parser.add_argument("--median", action='store_true')
 parser.add_argument("--smoothing", type=int, default='1')
@@ -117,5 +117,8 @@ if __name__ == '__main__':
         main(plot_results, args.files)
         pylab.legend(loc=0)
         pylab.ylim((0, None))
-        pylab.title(args.title)
+        title = args.title
+        if not title:
+            title = os.path.split(args.files[0])[-2]
+        pylab.title(title)
         pylab.show()

@@ -108,7 +108,7 @@ def log_parameters(checkpoint_dir):
     yaml.dump(FLAGS.__flags, f, default_flow_style=False)
 
   with open(os.path.join(checkpoint_dir, 'git-rev'), 'w') as f:
-    subprocess.call(['git', 'rev-parse'], stdout=f)
+    subprocess.call(['git', 'rev-parse', 'HEAD'], stdout=f)
 
   log_output = open(os.path.join(checkpoint_dir, 'results'), 'w', 1)
 
