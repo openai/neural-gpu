@@ -10,7 +10,7 @@ from requests import HTTPError
 parser = argparse.ArgumentParser(description='Run commands')
 parser.add_argument('--label', type=str, default='Experiment')
 parser.add_argument('--dry', action='store_true', default=False)
-parser.add_argument('--on_servers', action='store_true', default=False)
+parser.add_argument('--local', action='store_true', default=False)
 parser.add_argument('--kill', action='store_true', default=False)
 parser.add_argument('--force', action='store_true', default=False)
 parser.add_argument('paramoff', nargs='?', type=int, default=0)
@@ -80,7 +80,7 @@ def run_with_options_commands(gpu, screen_label, params, session_label=None):
 
 def oneserver_commands(param_sets, session_label, gpus):
     commands = []
-    commands.append(create_screen_commands(session_label))
+    commands.extend(create_screen_commands(session_label))
     for gpu, params in zip(gpus, param_sets):
         name = to_name(params)
         commands.extend(run_with_options_commands(gpu.index, name, params, session_label))
@@ -98,6 +98,7 @@ def run_opportunistically(param_sets, session_label):
     if os.path.isfile(server_location):
         raise ValueError('Server location file already exists!')
     gpudict = grab_gpus(len(param_sets))
+    print 'Got GPUs:', gpudict
     with open(server_location, 'w') as f:
         f.write('\n'.join(gpudict.keys()))
     done = 0
@@ -106,7 +107,7 @@ def run_opportunistically(param_sets, session_label):
                                       session_label, gpus)
         done += len(gpus)
         print h, commands
-        #run_remotely(h, commands)
+        run_remotely(h, commands)
 
 
 def check_git_modified():
@@ -148,14 +149,13 @@ def main(param_sets):
         else:
             print 'Please commit first.'
             return
-    if args.on_servers:
-        servers = args.on_servers.split(',')
+    if not args.local:
         if args.kill:
             kill(args.label)
             return
         run_opportunistically(param_sets, args.label)
     else:
         to_run = param_sets[args.paramoff:][:8]
-        commands = oneserver_commands(to_run, args.label, args.gpuoff)
+        commands = oneserver_commands(to_run, args.label, range(args.gpuoff, 8))
         run_here(commands)
         print 'RAN %s:%s of %s' % (args.paramoff, args.paramoff+8, len(param_sets))
