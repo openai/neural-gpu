@@ -13,6 +13,8 @@ parser.add_argument('--dry', action='store_true', default=False)
 parser.add_argument('--local', action='store_true', default=False)
 parser.add_argument('--kill', action='store_true', default=False)
 parser.add_argument('--force', action='store_true', default=False)
+parser.add_argument('--dir', type=str, default='models/neural_gpu')
+parser.add_argument('--program', type=str, default='python neural_gpu_trainer.py')
 parser.add_argument('paramoff', nargs='?', type=int, default=0)
 parser.add_argument('gpuoff', nargs='?', type=int, default=0)
 
@@ -24,8 +26,6 @@ smoothing:
 4: none
 
 """
-PROGRAM='neural_gpu_trainer.py'
-DIR='models/neural_gpu'
 USERNAME = os.environ['USER']
 
 def find_free_gpus(num_needed):
@@ -65,7 +65,7 @@ def create_screen_commands(session_label):
     return ['screen -S %s -d -m' % (session_label,)]
 
 def run_with_options_commands(gpu, screen_label, params, session_label=None):
-    internal_command = 'CUDA_VISIBLE_DEVICES=%s python %s' % (gpu, PROGRAM)
+    internal_command = 'CUDA_VISIBLE_DEVICES=%s %s' % (gpu, args.program)
     log_dir = '../logs/%s' % session_label
     internal_command += ' ' + '--train_dir=%s/%s' % (log_dir, screen_label)
     internal_command += ' ' + ' '.join('--%s=%s' % vs for vs in params.items())
@@ -139,7 +139,7 @@ def check_server_usage(server):
 def run_remotely(server, commands):
     print 'ON %s:' % server
     ssh_cmd = ["ssh", server,
-               "cd %s\n%s" % (DIR, '\n'.join(commands))]
+               "cd %s\n%s" % (args.dir, '\n'.join(commands))]
     print '\n'.join(commands)
     outp = subprocess.check_output(ssh_cmd)
     print 'DONE!'
