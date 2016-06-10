@@ -32,15 +32,16 @@ def create_screen_commands(session_label):
 def run_with_options_commands(gpu, screen_label, params, session_label=None):
     internal_command = 'CUDA_VISIBLE_DEVICES=%s python %s' % (gpu, PROGRAM)
     log_dir = '../logs/%s' % session_label
-    if not os.path.isdir(log_dir):
-        os.mkdir(log_dir)
     internal_command += ' ' + '--train_dir=%s/%s' % (log_dir, screen_label)
     internal_command += ' ' + ' '.join('--%s=%s' % vs for vs in params.items())
     screen_command = 'screen'
     screen_command += (' -S %s' % session_label if session_label else '')
     create_command = '%s -X screen -t "%s"' % (screen_command, screen_label)
     command = '%s -X -p "%s" stuff "%s\n"' % (screen_command, screen_label, internal_command)
-    return [create_command, command]
+    result = [create_command,
+              'mkdir -p %s' % log_dir,
+              command]
+    return result
 
 def oneserver_commands(param_sets, session_label, gpuoff):
     commands = []
