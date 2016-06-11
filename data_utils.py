@@ -130,7 +130,7 @@ class OpGenerator(DataGenerator):
     inp = np.concatenate([to_base(n1, self.base, k) + 1,
                           [self.sep],
                           to_base(n2, self.base, k) + 1])
-    outp = to_base(result, self.base, l-1) + 1
+    outp = to_base(result, self.base, 2*k+1) + 1
     return inp, outp
 
 generators.update(dict(add=OpGenerator(10, np.add, 11),

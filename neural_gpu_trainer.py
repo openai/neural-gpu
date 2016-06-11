@@ -211,7 +211,6 @@ def single_test(l, model, sess, task, nprint, batch_size, print_out=True,
     batch, _ = model.curriculum.draw_example(batch_size, l)
   result = model.step(sess, batch, False, get_steps=get_steps)
   errors, total, seq_err = result.accuracy(nprint)
-  #errors, total, seq_err = data.accuracy(inpt, result, target, batch_size, nprint)
   seq_err = float(seq_err) / batch_size
   if total > 0:
     errors = float(errors) / total

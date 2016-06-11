@@ -238,9 +238,9 @@ def make_dense(targets, noclass):
   return tf.reshape(dense, [-1, noclass])
 
 
-def check_for_zero(sparse):
-  """In a sparse batch of ints, make 1.0 if it's 0 and 0.0 else."""
-  return 1.0-tf.to_float(tf.clip_by_value(sparse, 0, 1))
+def check_nonzero(sparse):
+  """In a sparse batch of ints, make 1 if it's > 0 and 0 else."""
+  return tf.clip_by_value(sparse, 0, 1)
   if True:#with tf.device("/cpu:0"):
     shape = tf.shape(sparse)
     batch_size = shape[0]
@@ -308,6 +308,18 @@ class NeuralGPU(object):
       data_utils.print_out("Created model for bin of length %d in"
                            " %.2f s." % (length, time.time() - start_time))
 
+  def construct_mask(self, length):
+    # Mask to 0-out padding space in each step.
+    bmask = [(self.input[l] > 0) | (self.target[l] > 0) for l in xrange(length)]
+    mask = [tf.to_float(tf.reshape(m, [-1, 1])) for m in bmask]
+    # Use a shifted mask for step scaling and concatenated for weights.
+    shifted_mask = mask + [tf.zeros_like(mask[0])]
+    scales = [shifted_mask[i] * (1 - shifted_mask[i+1]) for i in xrange(length)]
+    scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
+    mask = tf.concat(1, mask)  # batch x length
+    mask = tf.reshape(mask, [-1, length, 1, 1])
+    return mask, scales
+
   def construct_graph_for_length(self, length, adam):
     nmaps = self.config.nmaps
     vec_size = self.config.nmaps
@@ -325,22 +337,7 @@ class NeuralGPU(object):
       with tf.control_dependencies([self.e0]):
         embedded = [tf.nn.embedding_lookup(self.emb_weights, self.input[l])
                     for l in xrange(length)]
-      # Mask to 0-out padding space in each step.
-      imask = [check_for_zero(self.input[l]) for l in xrange(length)]
-      omask = [check_for_zero(self.target[l]) for l in xrange(length)]
-      mask = [1.0 - (imask[i] * omask[i]) for i in xrange(length)]
-      mask = [tf.reshape(m, [-1, 1]) for m in mask]
-      # Use a shifted mask for step scaling and concatenated for weights.
-      shifted_mask = mask + [tf.zeros_like(mask[0])]
-      scales = [shifted_mask[i] * (1.0 - shifted_mask[i+1])
-                for i in xrange(length)]
-      scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
-      mask = tf.concat(1, mask[0:length])  # batch x length
-      weights = mask
-      # Add a height dimension to mask to use later for masking.
-      mask = tf.reshape(mask, [-1, length, 1, 1])
-      mask = tf.concat(2, [mask for _ in xrange(height)]) + tf.zeros(
-          tf.pack([batch_size, length, height, nmaps]), dtype=tf.float32)
+      mask, scales = self.construct_mask(length)
 
     # Start is a length-list of batch-by-nmaps tensors, reshape and concat.
     start = [tf.tanh(embedded[l]) for l in xrange(length)]
@@ -419,7 +416,7 @@ class NeuralGPU(object):
                     FLAGS.smooth_targets else targets)
     xent = tf.reshape(tf.nn.softmax_cross_entropy_with_logits(
         tf.reshape(output, [-1, noclass]), real_targets), [-1, length])
-    perp_loss = tf.reduce_sum(xent * weights)
+    perp_loss = tf.reduce_sum(xent * tf.reshape(mask, [-1, length]))
     perp_loss /= tf.cast(batch_size, dtype=tf.float32)
     perp_loss /= length
 
