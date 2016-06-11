@@ -99,7 +99,7 @@ def main2(func, files):
 
 def main(func, files):
     def get_key(fname):
-        return ('-'.join(fname.split('-')[:-2])).split('/')[-1]
+        return '/'.join(('-'.join(fname.split('-')[:-2])).split('/')[-2:])
     d = {}
     for f in files:
         d.setdefault(get_key(f), []).append(f)

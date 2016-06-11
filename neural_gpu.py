@@ -44,9 +44,6 @@ class NeuralConfig(object):
     self.max_length = max_length
     self.min_length = min_length
 
-    self.binary_annealing = FLAGS.binary_activation
-    self.do_binary = FLAGS.binary_activation >= 0
-
   def __str__(self):
     msg1 = ("layers %d kw %d h %d kh %d relax %d batch %d noise %.2f task %s"
             % (self.nconvs, self.kw, self.height, self.kh, self.rx_step,
@@ -88,7 +85,7 @@ class DefaultCurriculum(object):
   def draw_example(self, batch_size, l=None):
     generator = random.choice(self.generators)
 
-    if l is None:
+    while l is None:
       # Select the length for curriculum learning.
       l = np.random.randint(self.min_length, self.max_cur_length + 1)
       if np.random.randint(100) < 60: # Prefer longer stuff 60% of time.
@@ -96,6 +93,9 @@ class DefaultCurriculum(object):
       # Mixed curriculum learning: in 25% of cases go to an even larger length.
       if np.random.randint(100) < 25:
         l = max(l, np.random.randint(self.min_length, self.max_length + 1))
+
+      if not self.is_valid_length(l):
+        l = None
 
     result = generator.get_batch(l, batch_size)
     return (result, l)
@@ -267,8 +267,6 @@ class NeuralGPU(object):
     self.pull = float(config.pull)
     self.do_training = tf.placeholder(tf.float32, name="do_training")
 
-    self.binary_activation = 1.0
-
     # Feeds for inputs, targets, outputs, losses, etc.
     self.input = []
     self.target = []
@@ -385,10 +383,6 @@ class NeuralGPU(object):
           cur = tf.reduce_sum(expanded_probs * attention_vals, [0])
         else:
           cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
-
-        if self.config.do_binary:
-          binary_cur = tf.sign(cur) - tf.stop_gradient(tf.sign(cur) - cur)
-          cur = self.binary_activation * cur + (1 - self.binary_activation) * binary_cur
 
         outputs.append(tf.slice(cur, [0, 0, 0, 0], [-1, -1, 1, -1]))
         cur = tf.nn.dropout(cur, keep_prob)

@@ -3,6 +3,7 @@ import sys
 import collections
 import subprocess
 import argparse
+import yaml
 
 import cirrascale.client
 from requests import HTTPError
@@ -109,12 +110,16 @@ def run_opportunistically(param_sets, session_label):
     if os.path.isfile(server_location):
         raise ValueError('Server location file already exists!')
     gpudict = grab_gpus(len(param_sets))
+    record = dict(locations = gpudict,
+                  label = session_label,
+                  version = get_git_version(),
+                  filename = __name__,
+                  )
     print 'Got GPUs:'
     for k in gpudict:
         print k, len(gpudict[k])
     with open(server_location, 'w') as f:
-        for h, lst in gpudict.items():
-            print >> f, h, ' '.join(g.index for g in lst)
+        f.write(yaml.dump(record))
     done = 0
     for h, gpus in gpudict.items():
         commands = oneserver_commands(param_sets[done:done+len(gpus)],
@@ -123,6 +128,9 @@ def run_opportunistically(param_sets, session_label):
         run_remotely(h, commands)
     print 'Done'
 
+
+def get_git_version():
+    return subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip()
 
 def check_git_modified():
     files = subprocess.check_output(['git', 'ls-files', '-m'])

@@ -71,7 +71,6 @@ def define_flags():
   tf.app.flags.DEFINE_string("train_dir", "/tmp/neural", "Directory to store models.")
 
   tf.app.flags.DEFINE_bool("do_attention", False, "Whether to use attention method.")
-  tf.app.flags.DEFINE_float("binary_activation", -1, "Force binary activation every two layers, annealed at this rate")
 
 FLAGS = tf.app.flags.FLAGS
 if not FLAGS.__parsed: # Hack so reload() works
@@ -309,8 +308,6 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
       sess.run(model.avg_op)
       if acc_seq_err < (model.config.curriculum_bound / 3.0):
         model.lr *= 0.98
-
-    model.binary_activation *= model.config.binary_annealing
 
   # Lower learning rate if we're worse than the last 3 checkpoints.
   acc_perp = data.safe_exp(acc_loss)
