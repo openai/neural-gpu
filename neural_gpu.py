@@ -251,74 +251,36 @@ def check_nonzero(sparse):
     reshaped = tf.reshape(dense, [-1, 2])
   return tf.reshape(tf.slice(reshaped, [0, 0], [-1, 1]), [-1])
 
+class NeuralGPUAtSize(object):
+  """Instantiate the NeuralGPU at a given block size."""
+  def __init__(self, model, length, adam):
+    self.config = model.config
+    self.length = length
+    self.input = model.input
+    self.target = model.target
+    self.emb_weights = model.emb_weights
+    self.e0 = model.e0
+    self.do_training = model.do_training
 
-class NeuralGPU(object):
-  """Neural GPU Model."""
+    self.model = model
 
-  def __init__(self, config):
-    self.t = time.time()
-    self.config = config
+    self.task = model.task
 
-    # Feeds for parameters and ops to update them.
-    self.global_step = tf.Variable(0, trainable=False)
-    self.lr = float(config.lr)
-    self.quant_op = quantize_weights_op(512, 8)
+    self.construct_graph(adam)
 
-    self.pull = float(config.pull)
-    self.do_training = tf.placeholder(tf.float32, name="do_training")
-
-    # Feeds for inputs, targets, outputs, losses, etc.
-    self.input = []
-    self.target = []
-    for l in xrange(data_utils.forward_max + 1):
-      self.input.append(tf.placeholder(tf.int32, name="inp{0}".format(l)))
-      self.target.append(tf.placeholder(tf.int32, name="tgt{0}".format(l)))
-    self.outputs = []
-    self.losses = []
-    self.grad_norms = []
-    self.updates = []
-    self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
-
-    with tf.variable_scope("model") as vs:
-      self.construct_graph()
-      self.saver = tf.train.Saver(tf.all_variables())
-
-  def construct_graph(self):
-    vec_size = self.config.nmaps
-    # Computation.
-    if True:#with tf.device("/cpu:0"):
-      self.emb_weights = tf.get_variable(
-          "embedding", [self.config.niclass, vec_size],
-          initializer=tf.random_uniform_initializer(-1.7, 1.7))
-      self.e0 = tf.scatter_update(self.emb_weights,
-                             tf.constant(0, dtype=tf.int32, shape=[1]),
-                             tf.zeros([1, vec_size]))
-
-    adam = tf.train.AdamOptimizer(self.lr, epsilon=1e-4, use_locking=True)
-
-    # Main graph creation loop, for every bin in data_utils.
-    self.steps = []
-    for length in sorted(list(set(data_utils.bins + [data_utils.forward_max]))):
-      data_utils.print_out("Creating model for bin of length %d." % length)
-      start_time = time.time()
-      self.construct_graph_for_length(length, adam)
-      tf.get_variable_scope().reuse_variables() # Later rounds reuse variables
-      data_utils.print_out("Created model for bin of length %d in"
-                           " %.2f s." % (length, time.time() - start_time))
-
-  def construct_mask(self, length):
+  def construct_mask(self):
     # Mask to 0-out padding space in each step.
-    bmask = [(self.input[l] > 0) | (self.target[l] > 0) for l in xrange(length)]
+    bmask = [(self.input[l] > 0) | (self.target[l] > 0) for l in xrange(self.length)]
     mask = [tf.to_float(tf.reshape(m, [-1, 1])) for m in bmask]
     # Use a shifted mask for step scaling and concatenated for weights.
     shifted_mask = mask + [tf.zeros_like(mask[0])]
-    scales = [shifted_mask[i] * (1 - shifted_mask[i+1]) for i in xrange(length)]
+    scales = [shifted_mask[i] * (1 - shifted_mask[i+1]) for i in xrange(self.length)]
     scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
     mask = tf.concat(1, mask)  # batch x length
-    mask = tf.reshape(mask, [-1, length, 1, 1])
+    mask = tf.reshape(mask, [-1, self.length, 1, 1])
     return mask, scales
 
-  def construct_graph_for_length(self, length, adam):
+  def construct_graph(self, adam):
     nmaps = self.config.nmaps
     vec_size = self.config.nmaps
     noclass = self.config.noclass
@@ -329,31 +291,33 @@ class NeuralGPU(object):
     height = self.config.height
     batch_size = tf.shape(self.input[0])[0]
 
+    # The general tensor shape is
+    # batchsize x length x height x nmaps
 
     # Embed inputs and calculate mask.
     if True:#with tf.device("/cpu:0"):
       with tf.control_dependencies([self.e0]):
         embedded = [tf.nn.embedding_lookup(self.emb_weights, self.input[l])
-                    for l in xrange(length)]
-      mask, scales = self.construct_mask(length)
+                    for l in xrange(self.length)]
+      mask, scales = self.construct_mask()
 
     # Start is a length-list of batch-by-nmaps tensors, reshape and concat.
-    start = [tf.tanh(embedded[l]) for l in xrange(length)]
-    start = [tf.reshape(start[l], [-1, 1, nmaps]) for l in xrange(length)]
-    start = tf.reshape(tf.concat(1, start), [-1, length, 1, nmaps])
+    start = [tf.tanh(embedded[l]) for l in xrange(self.length)]
+    start = [tf.reshape(start[l], [-1, 1, nmaps]) for l in xrange(self.length)]
+    start = tf.reshape(tf.concat(1, start), [-1, self.length, 1, nmaps])
 
     # First image comes from start by applying one convolution and adding 0s.
     first = conv_linear(start, 1, 1, vec_size, nmaps, True, 0.0, "input")
-    first = [first] + [tf.zeros(tf.pack([batch_size, length, 1, nmaps]),
+    first = [first] + [tf.zeros(tf.pack([batch_size, self.length, 1, nmaps]),
                                 dtype=tf.float32) for _ in xrange(height - 1)]
     first = tf.concat(2, first)
 
     # Computation steps.
-    keep_prob = 1.0 - self.do_training * (self.config.dropout * 8.0 / float(length))
+    keep_prob = 1.0 - self.do_training * (self.config.dropout * 8.0 / float(self.length))
     step = [tf.nn.dropout(first, keep_prob) * mask]
     outputs = []
     self.attention_probs = []
-    for it in xrange(length):
+    for it in xrange(self.length):
       with tf.variable_scope("RX%d" % (it % self.config.rx_step)) as vs:
         if it >= self.config.rx_step:
           vs.reuse_variables()
@@ -388,49 +352,106 @@ class NeuralGPU(object):
         cur = tf.nn.dropout(cur, keep_prob)
         step.append(cur * mask)
 
-    self.steps.append([tf.reshape(s, [-1, length, height * nmaps])
-                       for s in step])
+    self.steps = [tf.reshape(s, [-1, self.length, height * nmaps]) for s in step]
     # Output is the n-th step output; n = current length, as in scales.
-    output = tf.add_n([outputs[i] * scales[i] for i in xrange(length)])
+    output = tf.add_n([outputs[i] * scales[i] for i in xrange(self.length)])
     # Final convolution to get logits, list outputs.
     output = conv_linear(output, 1, 1, nmaps, noclass, True, 0.0, "output")
-    output = tf.reshape(output, [-1, length, noclass])
+    output = tf.reshape(output, [-1, self.length, noclass])
     external_output = [tf.reshape(o, [-1, noclass])
-                       for o in list(tf.split(1, length, output))]
+                       for o in list(tf.split(1, self.length, output))]
     external_output = [tf.nn.softmax(o) for o in external_output]
     # external_output[1] == character 1 for all batches
     #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
-    self.outputs.append(external_output)
+    self.output = external_output
     # Calculate cross-entropy loss and normalize it.
     targets = tf.concat(1, [make_dense(self.target[l], noclass)
-                            for l in xrange(length)])
+                            for l in xrange(self.length)])
     targets = tf.reshape(targets, [-1, noclass])
     real_targets = ((0.5*targets + 0.5*tf.stop_gradient(
       tf.nn.softmax(tf.reshape(output, [-1, noclass])))) if
                     FLAGS.smooth_targets else targets)
     xent = tf.reshape(tf.nn.softmax_cross_entropy_with_logits(
-        tf.reshape(output, [-1, noclass]), real_targets), [-1, length])
-    perp_loss = tf.reduce_sum(xent * tf.reshape(mask, [-1, length]))
+        tf.reshape(output, [-1, noclass]), real_targets), [-1, self.length])
+    perp_loss = tf.reduce_sum(xent * tf.reshape(mask, [-1, self.length]))
     perp_loss /= tf.cast(batch_size, dtype=tf.float32)
-    perp_loss /= length
+    perp_loss /= self.length
 
     # Final loss: cross-entropy + shared parameter relaxation part.
-    relax_dist, self.avg_op = relaxed_distance(self.config.rx_step)
-    total_loss = perp_loss + relax_dist * self.pull
-    self.losses.append(perp_loss)
+    relax_dist, self.model.avg_op = relaxed_distance(self.config.rx_step)
+    total_loss = perp_loss + relax_dist * self.model.pull
+    self.loss = perp_loss
 
     # Gradients and Adam update operation.
-    if length == data_utils.bins[0] or (self.config.mode == 0 and
-                                        length < data_utils.bins[-1] + 1):
-      data_utils.print_out("Creating backward for bin of length %d." % length)
+    if self.length == data_utils.bins[0] or (self.config.mode == 0 and
+                                        self.length < data_utils.bins[-1] + 1):
+      data_utils.print_out("Creating backward for bin of length %d." % self.length)
       params = tf.trainable_variables()
       grads = tf.gradients(total_loss, params)
       grads, norm = tf.clip_by_global_norm(grads, self.config.max_grad_norm)
-      self.grad_norms.append(norm)
+      self.grad_norm = norm
       update = adam.apply_gradients(zip(grads, params),
-                                    global_step=self.global_step)
-      self.updates.append(update)
+                                    global_step=self.model.global_step)
+      self.update = update
 
+
+class NeuralGPU(object):
+  """Neural GPU Model."""
+
+  def __init__(self, config):
+    self.t = time.time()
+    self.config = config
+
+    # Feeds for parameters and ops to update them.
+    self.global_step = tf.Variable(0, trainable=False)
+    self.lr = float(config.lr)
+    self.quant_op = quantize_weights_op(512, 8)
+
+    self.pull = float(config.pull)
+    self.do_training = tf.placeholder(tf.float32, name="do_training")
+
+    # Feeds for inputs, targets, outputs, losses, etc.
+    self.instances = []
+
+    self.input = []
+    self.target = []
+    for l in xrange(data_utils.forward_max + 1):
+      self.input.append(tf.placeholder(tf.int32, name="inp{0}".format(l)))
+      self.target.append(tf.placeholder(tf.int32, name="tgt{0}".format(l)))
+    self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
+
+    with tf.variable_scope("model") as vs:
+      self.construct_graph()
+      self.saver = tf.train.Saver(tf.all_variables())
+
+  def construct_graph(self):
+    vec_size = self.config.nmaps
+    # Computation.
+    if True:#with tf.device("/cpu:0"):
+      self.emb_weights = tf.get_variable(
+          "embedding", [self.config.niclass, vec_size],
+          initializer=tf.random_uniform_initializer(-1.7, 1.7))
+      self.e0 = tf.scatter_update(self.emb_weights,
+                             tf.constant(0, dtype=tf.int32, shape=[1]),
+                             tf.zeros([1, vec_size]))
+
+    adam = tf.train.AdamOptimizer(self.lr, epsilon=1e-4, use_locking=True)
+
+    # Main graph creation loop, for every bin in data_utils.
+    self.steps = []
+    for length in sorted(list(set(data_utils.bins + [data_utils.forward_max]))):
+      data_utils.print_out("Creating model for bin of length %d." % length)
+      start_time = time.time()
+      self.instances.append(NeuralGPUAtSize(self, length, adam))
+      tf.get_variable_scope().reuse_variables() # Later rounds reuse variables
+      data_utils.print_out("Created model for bin of length %d in"
+                           " %.2f s." % (length, time.time() - start_time))
+
+  def get_instance_for_length(self, length):
+    for instance in self.instances:
+      if instance.length >= length:
+        return instance
+    raise IndexError('Max instance size %s; %s is too large!' % (instance.length, length))
 
   def step(self, sess, batch, do_backward, get_steps=False):
     """Run a step of the network."""
@@ -441,24 +462,20 @@ class NeuralGPU(object):
     feed_in[self.do_training] = 1.0 if do_backward else 0.0
     feed_in[self.task] = taskid
     feed_out = {}
-    index = len(data_utils.bins)
-    if length < data_utils.bins[-1] + 1:
-      index = data_utils.bins.index(length)
+    instance = self.get_instance_for_length(length)
     for l in xrange(length):
-      feed_in[self.input[l]] = inp[l]
-      feed_in[self.target[l]] = target[l]
-    if index >= len(self.losses):
-      raise IndexError('index too large!')
+      feed_in[instance.input[l]] = inp[l]
+      feed_in[instance.target[l]] = target[l]
     if do_backward:
-      feed_out['back_update'] = self.updates[index]
-      feed_out['grad_norm'] = self.grad_norms[index]
+      feed_out['back_update'] = instance.update
+      feed_out['grad_norm'] = instance.grad_norm
     if get_steps:
-      feed_out['step'] = self.steps[index][:length+1]
-    feed_out['loss'] = self.losses[index]
-    feed_out['output'] = self.outputs[index][:length]
+      feed_out['step'] = instance.steps
+    feed_out['loss'] = instance.loss
+    feed_out['output'] = instance.output
     if FLAGS.do_attention:
-      feed_out['attention'] = self.attention_probs
-    res = data_utils.sess_run_dict(sess, feed_out, feed_in)
+      feed_out['attention'] = instance.attention_probs
+    res = sess.run(feed_out, feed_in)
     return NeuralGPUResult(res, inp, target, taskid)
 
 class NeuralGPUResult(object):
