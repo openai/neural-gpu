@@ -478,3 +478,12 @@ class NeuralGPUResult(object):
   def accuracy(self, nprint=0):
     batch_size = self.input.shape[1]
     return data_utils.accuracy(self.input, self.output, self.target, batch_size, nprint)
+
+  @property
+  def length(self):
+    return (self.input[:,0] > 0).sum()
+
+  def __repr__(self):
+    err, tot, seq_err = self.accuracy()
+    return '<NeuralGPUResult: length=%s loss=%s bs=%s err=%s seq_err=%s>' % \
+      (self.length, self.loss, self.input.shape[1], err, seq_err)
