@@ -256,8 +256,9 @@ class NeuralGPUAtSize(object):
   def __init__(self, model, length, adam):
     self.config = model.config
     self.length = length
-    self.input = model.input
+    self.input = tf.concat(1, [tf.expand_dims(i, 1) for i in model.input[:length]])
     self.target = model.target
+    #tf.concat(1, [tf.reshape(i, [-1, 1]) for i in model.target[:length]])
     self.emb_weights = model.emb_weights
     self.e0 = model.e0
     self.do_training = model.do_training
@@ -270,15 +271,12 @@ class NeuralGPUAtSize(object):
 
   def construct_mask(self):
     # Mask to 0-out padding space in each step.
-    bmask = [(self.input[l] > 0) | (self.target[l] > 0) for l in xrange(self.length)]
-    mask = [tf.to_float(tf.reshape(m, [-1, 1])) for m in bmask]
+    # bmask: batch_size x length
+    bmask = (self.input > 0) | (self.target > 0)
+    # mask: batch_size x length x 1 x 1
+    mask = tf.expand_dims(tf.expand_dims(bmask, 2), 2)
     # Use a shifted mask for step scaling and concatenated for weights.
-    shifted_mask = mask + [tf.zeros_like(mask[0])]
-    scales = [shifted_mask[i] * (1 - shifted_mask[i+1]) for i in xrange(self.length)]
-    scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
-    mask = tf.concat(1, mask)  # batch x length
-    mask = tf.reshape(mask, [-1, self.length, 1, 1])
-    return mask, scales
+    return tf.to_float(mask)
 
   def construct_graph(self, adam):
     nmaps = self.config.nmaps
@@ -289,7 +287,7 @@ class NeuralGPUAtSize(object):
     kw = self.config.kw
     kh = self.config.kh
     height = self.config.height
-    batch_size = tf.shape(self.input[0])[0]
+    batch_size = tf.shape(self.input)[0]
 
     # The general tensor shape is
     # batchsize x length x height x nmaps
@@ -297,20 +295,17 @@ class NeuralGPUAtSize(object):
     # Embed inputs and calculate mask.
     if True:#with tf.device("/cpu:0"):
       with tf.control_dependencies([self.e0]):
-        embedded = [tf.nn.embedding_lookup(self.emb_weights, self.input[l])
-                    for l in xrange(self.length)]
-      mask, scales = self.construct_mask()
+        embedded = tf.nn.embedding_lookup(self.emb_weights, self.input)
+      mask = self.construct_mask()
 
-    # Start is a length-list of batch-by-nmaps tensors, reshape and concat.
-    start = [tf.tanh(embedded[l]) for l in xrange(self.length)]
-    start = [tf.reshape(start[l], [-1, 1, nmaps]) for l in xrange(self.length)]
-    start = tf.reshape(tf.concat(1, start), [-1, self.length, 1, nmaps])
+    # start: batch_size x length x nmaps
+    start = tf.tanh(embedded)
 
     # First image comes from start by applying one convolution and adding 0s.
-    first = conv_linear(start, 1, 1, vec_size, nmaps, True, 0.0, "input")
-    first = [first] + [tf.zeros(tf.pack([batch_size, self.length, 1, nmaps]),
-                                dtype=tf.float32) for _ in xrange(height - 1)]
-    first = tf.concat(2, first)
+    # first: batch_size x length x height x nmaps
+    first = conv_linear(tf.expand_dims(start, 2),
+                        1, 1, vec_size, nmaps, True, 0.0, "input")
+    first = tf.concat(2, [first] + [tf.zeros_like(first)]*(height - 1))
 
     # Computation steps.
     keep_prob = 1.0 - self.do_training * (self.config.dropout * 8.0 / float(self.length))
@@ -354,7 +349,7 @@ class NeuralGPUAtSize(object):
 
     self.steps = [tf.reshape(s, [-1, self.length, height * nmaps]) for s in step]
     # Output is the n-th step output; n = current length, as in scales.
-    output = tf.add_n([outputs[i] * scales[i] for i in xrange(self.length)])
+    output = outputs[-1]
     # Final convolution to get logits, list outputs.
     output = conv_linear(output, 1, 1, nmaps, noclass, True, 0.0, "output")
     output = tf.reshape(output, [-1, self.length, noclass])
@@ -394,6 +389,8 @@ class NeuralGPUAtSize(object):
                                     global_step=self.model.global_step)
       self.update = update
 
+    def __repr__(self):
+      return '<NeuralGPUAtSize %s>' % (self.length)
 
 class NeuralGPU(object):
   """Neural GPU Model."""
@@ -416,8 +413,8 @@ class NeuralGPU(object):
     self.input = []
     self.target = []
     for l in xrange(data_utils.forward_max + 1):
-      self.input.append(tf.placeholder(tf.int32, name="inp{0}".format(l)))
-      self.target.append(tf.placeholder(tf.int32, name="tgt{0}".format(l)))
+      self.input.append(tf.placeholder(tf.int32, shape=(None,), name="inp{0}".format(l)))
+      self.target.append(tf.placeholder(tf.int32, shape=(None,), name="tgt{0}".format(l)))
     self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
 
     with tf.variable_scope("model") as vs:
@@ -462,10 +459,10 @@ class NeuralGPU(object):
     feed_in[self.do_training] = 1.0 if do_backward else 0.0
     feed_in[self.task] = taskid
     feed_out = {}
-    instance = self.get_instance_for_length(length)
     for l in xrange(length):
-      feed_in[instance.input[l]] = inp[l]
-      feed_in[instance.target[l]] = target[l]
+      feed_in[self.input[l]] = inp[l]
+      feed_in[self.target[l]] = target[l]
+    instance = self.get_instance_for_length(length)
     if do_backward:
       feed_out['back_update'] = instance.update
       feed_out['grad_norm'] = instance.grad_norm

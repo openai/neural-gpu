@@ -34,6 +34,8 @@ def getscores_for_fileset(filenames):
     for fname in filenames:
         if not fname.endswith('/results'):
             fname += '/results'
+        if not os.path.exists(fname):
+            continue
         with open(fname) as f:
             scores = getscores(f)
             if not scores:
@@ -45,7 +47,8 @@ def getscores_for_fileset(filenames):
     if not len(data):
         return data
     data.values[0] = 1
-    data = data.interpolate()
+    print data
+    #data = data.interpolate()
     return data
 
 def get_name(fname):

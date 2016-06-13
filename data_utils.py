@@ -107,7 +107,7 @@ class DataGenerator(object):
     result = np.array([self.rand_pair_padded(length)
                        for _ in xrange(batch_size)])
     inp, outp = result.transpose([1,2,0])
-    return inp, outp, [0 for _ in inp]
+    return inp, outp, [0] * batch_size
 
   def _initialize(self, nclass):
     self.nclass = nclass

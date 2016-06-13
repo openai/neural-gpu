@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import sys
 import collections
@@ -34,7 +35,7 @@ def find_free_gpus(num_needed):
     free_gpu_status = {k:[g for g in v if g.available]
                        for k,v in all_gpu_status.items()}
     num_free = sum(map(len, free_gpu_status.values()))
-    print '%s/%s GPUS' % (num_needed, num_free)
+    print('%s/%s GPUS' % (num_needed, num_free))
     if num_free < num_needed:
         raise ValueError("Insufficient GPUs available!")
     choices = {}
@@ -53,7 +54,7 @@ def grab_gpus(num_needed, t=5*60):
         try:
             cirrascale.client.reserve_gpus(USERNAME, gpu_strings, t)
         except HTTPError as e:
-            print 'Error reserving the GPUs; race? Trying again.'
+            print('Error reserving the GPUs; race? Trying again.')
         else:
             break
     return choices
@@ -107,7 +108,7 @@ def kill(session_label):
     metadata['state'] = 'dead'
     with open(server_location, 'w') as f:
         f.write(yaml.safe_dump(metadata))
-    print 'Success! Writing state out to file.'
+    print('Success! Writing state out to file.')
 
 def run_opportunistically(param_sets, session_label):
     server_location = 'servers/%s' % session_label
@@ -122,9 +123,9 @@ def run_opportunistically(param_sets, session_label):
                   params = map(dict, param_sets),
                   state = 'alive'
                   )
-    print 'Got GPUs:'
+    print('Got GPUs:')
     for k in gpudict:
-        print k, len(gpudict[k])
+        print(k, len(gpudict[k]))
     with open(server_location, 'w') as f:
         f.write(yaml.safe_dump(metadata))
     done = 0
@@ -133,7 +134,7 @@ def run_opportunistically(param_sets, session_label):
                                       session_label, gpus)
         done += len(gpus)
         run_remotely(h, commands)
-    print 'Done'
+    print('Done')
 
 
 def get_git_version():
@@ -142,9 +143,9 @@ def get_git_version():
 def check_git_modified():
     files = subprocess.check_output(['git', 'ls-files', '-m'])
     if files:
-        print 'ERROR: modified files:'
+        print('ERROR: modified files:')
         for f in files.splitlines():
-            print '  '+f.strip()
+            print('  '+f.strip())
         return True
     return False
 
@@ -154,17 +155,17 @@ def check_server_usage(server):
     return procs.split()
 
 def run_remotely(server, commands):
-    print 'Running commands %s.' % server
+    print('Running commands %s.' % server)
     ssh_cmd = ["ssh", server,
                "cd %s\n%s" % (args.dir, '\n'.join(commands))]
-    #print '\n'.join(commands)
+    #print('\n'.join(commands))
     outp = subprocess.check_output(ssh_cmd)
-    #print 'DONE!'
+    #print('DONE!')
     return outp
 
 def run_here(commands):
     for c in commands:
-        print cmd
+        print(cmd)
         if not args.dry:
             os.system(cmd)
 
@@ -174,9 +175,9 @@ def main(param_sets):
     args =  parser.parse_args()
     if not args.kill and check_git_modified():
         if args.force:
-            print 'Continuing anyway...'
+            print('Continuing anyway...')
         else:
-            print 'Please commit first.'
+            print('Please commit first.')
             return
     if not args.local:
         if args.kill:
@@ -187,4 +188,4 @@ def main(param_sets):
         to_run = param_sets[args.paramoff:][:8]
         commands = oneserver_commands(to_run, args.label, range(args.gpuoff, 8))
         run_here(commands)
-        print 'RAN %s:%s of %s' % (args.paramoff, args.paramoff+8, len(param_sets))
+        print('RAN %s:%s of %s' % (args.paramoff, args.paramoff+8, len(param_sets)))
