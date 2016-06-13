@@ -104,6 +104,10 @@ def kill(session_label):
             if g.host in gpudict and g.index in gpudict[g.host]:
                 to_unreserve.append(g.id)
     cirrascale.client.release_gpus(to_unreserve)
+    metadata['state'] = 'dead'
+    with open(server_location, 'w') as f:
+        f.write(yaml.safe_dump(metadata))
+    print 'Success! Writing state out to file.'
 
 def run_opportunistically(param_sets, session_label):
     server_location = 'servers/%s' % session_label
@@ -111,17 +115,18 @@ def run_opportunistically(param_sets, session_label):
         raise ValueError('Server location file already exists!')
     gpudict = grab_gpus(len(param_sets))
     alt_gpudict = {h : [g.index for g in lst] for (h, lst) in gpudict.items()}
-    record = dict(locations = alt_gpudict,
+    metadata = dict(locations = alt_gpudict,
                   label = session_label,
                   version = get_git_version(),
                   argv = sys.argv,
                   params = map(dict, param_sets),
+                  state = 'alive'
                   )
     print 'Got GPUs:'
     for k in gpudict:
         print k, len(gpudict[k])
     with open(server_location, 'w') as f:
-        f.write(yaml.safe_dump(record))
+        f.write(yaml.safe_dump(metadata))
     done = 0
     for h, gpus in sorted(gpudict.items()):
         commands = oneserver_commands(param_sets[done:done+len(gpus)],
