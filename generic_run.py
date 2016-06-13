@@ -65,10 +65,13 @@ def to_name(params):
 def create_screen_commands(session_label):
     return ['screen -S %s -d -m' % (session_label,)]
 
+def get_train_dir(screen_label, session_label):
+    return '../logs/%s/%s' % (session_label, screen_label)
+
 def run_with_options_commands(gpu, screen_label, params, session_label=None):
     internal_command = 'CUDA_VISIBLE_DEVICES=%s %s' % (gpu, args.program)
-    log_dir = '../logs/%s' % session_label
-    internal_command += ' ' + '--train_dir=%s/%s' % (log_dir, screen_label)
+    log_dir = get_train_dir(screen_label, session_label)
+    internal_command += ' ' + '--train_dir=%s' % log_dir
     internal_command += ' ' + ' '.join('--%s=%s' % vs for vs in params.items())
     screen_command = 'screen'
     screen_command += (' -S %s' % session_label if session_label else '')
@@ -112,6 +115,7 @@ def run_opportunistically(param_sets, session_label):
                   label = session_label,
                   version = get_git_version(),
                   argv = sys.argv,
+                  params = map(dict, param_sets),
                   )
     print 'Got GPUs:'
     for k in gpudict:
@@ -119,7 +123,7 @@ def run_opportunistically(param_sets, session_label):
     with open(server_location, 'w') as f:
         f.write(yaml.safe_dump(record))
     done = 0
-    for h, gpus in gpudict.items():
+    for h, gpus in sorted(gpudict.items()):
         commands = oneserver_commands(param_sets[done:done+len(gpus)],
                                       session_label, gpus)
         done += len(gpus)
