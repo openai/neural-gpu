@@ -54,7 +54,10 @@ class Results(object):
             return dict(accuracy=self.accuracy,
                         step = self.step)
         else:
-            return self.results[0]
+            if not self.results:
+                return 'No output found!'
+            else:
+                return self.results[0]
 
     @property
     def accuracy(self):
