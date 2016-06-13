@@ -79,7 +79,7 @@ def run_with_options_commands(gpu, screen_label, params, session_label=None):
     create_command = '%s -X screen -t "%s"' % (screen_command, screen_label)
     command = '%s -X -p "%s" stuff "%s\n"' % (screen_command, screen_label, internal_command)
     result = [create_command,
-              'mkdir -p %s' % log_dir,
+              'mkdir -p %s' % os.path.dirname(log_dir),
               command]
     return result
 
