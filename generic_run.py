@@ -90,11 +90,8 @@ def oneserver_commands(param_sets, session_label, gpus):
 def kill(session_label):
     server_location = 'servers/%s' % session_label
     with open(server_location) as f:
-        gpudict = {}
-        for line in f:
-            host = line.split()[0]
-            indices = line.split()[1:]
-            gpudict[host] = set(indices)
+        metadata = yaml.load(f)
+        gpudict = metadata['locations']
     for s in gpudict:
         run_remotely(s, ['sh kill_screen.sh %s' % session_label])
     all_gpus = cirrascale.client.get_gpu_status()
@@ -110,16 +107,17 @@ def run_opportunistically(param_sets, session_label):
     if os.path.isfile(server_location):
         raise ValueError('Server location file already exists!')
     gpudict = grab_gpus(len(param_sets))
-    record = dict(locations = gpudict,
+    alt_gpudict = {h : [g.index for g in lst] for (h, lst) in gpudict.items()}
+    record = dict(locations = alt_gpudict,
                   label = session_label,
                   version = get_git_version(),
-                  filename = __name__,
+                  argv = sys.argv,
                   )
     print 'Got GPUs:'
     for k in gpudict:
         print k, len(gpudict[k])
     with open(server_location, 'w') as f:
-        f.write(yaml.dump(record))
+        f.write(yaml.safe_dump(record))
     done = 0
     for h, gpus in gpudict.items():
         commands = oneserver_commands(param_sets[done:done+len(gpus)],
