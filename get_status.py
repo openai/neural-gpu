@@ -21,7 +21,7 @@ def load_log(fname):
         return None
     step_lines = [x for x in lines if x.startswith('step ')]
     if not step_lines:
-        return None
+        return lines[-1].strip()
     else:
         data = step_lines[-1].split()
         return dict(zip(data[::2], data[1::2]))
@@ -49,18 +49,24 @@ class Results(object):
                 self.dead[server] = dead
 
     @property
+    def status(self):
+        if any(isinstance(res, dict) for res in self.results):
+            return dict(accuracy=self.accuracy,
+                        step = self.step)
+        else:
+            return self.results[0]
+
+    @property
     def accuracy(self):
-        if not any(self.results):
-            return 'N/A'
         return '%0.2f' % np.median([float(r['sequence-errors']) for r in self.results
-                          if r])
+                                    if isinstance(r, dict)])
 
     @property
     def step(self):
         if not any(self.results):
             return 'N/A'
         return int(np.median([int(r['step']) for r in self.results
-                          if r]))
+                              if isinstance(r, dict)]))
 
     def print_out(self, verbosity=1):
         to_print = {}
@@ -68,7 +74,7 @@ class Results(object):
         if verbosity >= 1:
             self._parse_logs()
             self._running_programs()
-            keys = keys.union('accuracy step dead'.split())
+            keys = keys.union('status dead'.split())
         if verbosity >= 2:
             keys = keys.union(self.metadata.keys())
         for key in keys:
