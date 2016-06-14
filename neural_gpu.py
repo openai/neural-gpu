@@ -152,11 +152,15 @@ def make_dense(targets, noclass):
     dense = tf.sparse_to_dense(indices, length, 1.0, 0.0)
   return tf.reshape(dense, [-1, noclass])
 
+def tf_shape(tensor):
+  """Return the tensor shape in a form tf.reshape understands."""
+  return [x or -1 for x in tensor.get_shape().as_list()]
+
 def softmax(array):
   """Perform a softmax along the final axis but preserve shape."""
   nclass = array.get_shape()[-1].value
   result = tf.nn.softmax(tf.reshape(array, [-1, nclass]))
-  return tf.reshape(result, [-1] + [x.value for x in array.get_shape()[1:]])
+  return tf.reshape(result, tf_shape(array))
 
 def check_nonzero(sparse):
   """In a sparse batch of ints, make 1 if it's > 0 and 0 else."""
@@ -190,7 +194,7 @@ class NeuralGPUAtSize(object):
     # shifted_mask: (length + 1) x batch_size x 1
     shifted_mask = mask + [tf.zeros_like(mask[0])]
     scales = [shifted_mask[i] * (1 - shifted_mask[i+1]) for i in xrange(self.length)]
-    scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
+    scales = [tf.reshape(s, [-1, 1, 1]) for s in scales]
     #scales:  length x batch_size x 1 x 1 x 1
     mask = tf.concat(1, mask)  # batch x length
     mask = tf.reshape(mask, [-1, self.length, 1, 1])
@@ -299,13 +303,18 @@ class NeuralGPUAtSize(object):
         self.layer_outputs = external_outputs
         output = outputs[-1]
         self.output = external_outputs[-1]
+      elif True:
+        outputs = tf.pack(outputs) # depth x batch_size x length x noclass
+        external_outputs = softmax(outputs) # same
+        self.layer_outputs = external_outputs
+        last_output = tf.reduce_sum(external_outputs * tf.pack(scales), 0)
+        self.output = tf.transpose(last_output, [1,0,2]) # length x batch_size x noclass
       else:
         self.layer_outputs = [softmax(o) for o in outputs]
         # if we really end up using this, can redefine scales earlier
-        output = tf.add_n([o * tf.reshape(s, [-1, 1, 1])
-                           for o, s in zip(outputs, scales)])
+        output = tf.add_n([o * s for o, s in zip(outputs, scales)])
         # output: batch_size x length x noclass
-        # external_output: batch_size x noclass
+        # external_output: List[batch_size x noclass]
         external_output = [tf.reshape(o, [-1, noclass])
                            for o in tf.split(1, self.length, output)]
         external_output = [tf.nn.softmax(o) for o in external_output]
@@ -313,6 +322,7 @@ class NeuralGPUAtSize(object):
     else:
       self.layer_outputs = []
 
+      scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
       output = tf.add_n([curs[i][:,:,:1,:] * scales[i] for i in xrange(self.length)])
       output = conv_linear(output, 1, 1, nmaps, noclass, True, 0.0, "output")
       output = tf.reshape(output, [-1, self.length, noclass])
