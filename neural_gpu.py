@@ -181,13 +181,24 @@ class NeuralGPUAtSize(object):
 
     self.construct_graph(adam)
 
-  def construct_mask(self):
+  def construct_mask(self) :
+    # Mask to 0-out padding space in each step.
+    bmask = [(self.input[:,l] > 0) | (self.target[l] > 0) for l in xrange(self.length)]
+    mask = [tf.to_float(tf.reshape(m, [-1, 1])) for m in bmask]
+    # Use a shifted mask for step scaling and concatenated for weights.
+    shifted_mask = mask + [tf.zeros_like(mask[0])]
+    scales = [shifted_mask[i] * (1 - shifted_mask[i+1]) for i in xrange(self.length)]
+    scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
+    mask = tf.concat(1, mask)  # batch x length
+    mask = tf.reshape(mask, [-1, self.length, 1, 1])
+    return mask, scales
+
+  def construct_mask_better(self):
     # Mask to 0-out padding space in each step.
     # bmask: batch_size x length
     bmask = (self.input > 0) | (self.target > 0)
     # mask: batch_size x length x 1 x 1
     mask = tf.expand_dims(tf.expand_dims(bmask, 2), 2)
-    # Use a shifted mask for step scaling and concatenated for weights.
     return tf.to_float(mask)
 
   def construct_graph(self, adam):
@@ -208,7 +219,7 @@ class NeuralGPUAtSize(object):
     if True:#with tf.device("/cpu:0"):
       with tf.control_dependencies([self.e0]):
         embedded = tf.nn.embedding_lookup(self.emb_weights, self.input)
-      mask = self.construct_mask()
+      mask, scales = self.construct_mask()
 
     # start: batch_size x length x nmaps
     start = tf.tanh(embedded)
@@ -259,24 +270,37 @@ class NeuralGPUAtSize(object):
         step.append(cur * mask)
 
     self.steps = [tf.reshape(s, [-1, self.length, height * nmaps]) for s in step]
-    # Final convolution to get logits, list outputs.
-    outputs = []
-    with tf.variable_scope("output") as vs:
-      for i, layer in enumerate(curs):
-        output = conv_linear(layer[:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "o")
-        output = tf.reshape(output, [-1, self.length, noclass])
-        outputs.append(output)
-        vs.reuse_variables()
+    if False:
+      # Final convolution to get logits, list outputs.
+      outputs = []
+      with tf.variable_scope("output") as vs:
+        for i, layer in enumerate(curs):
+          output = conv_linear(layer[:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "o")
+          #output = tf.reshape(output, [-1, self.length, noclass])
+          outputs.append(output)
+          vs.reuse_variables()
 
-    # External outputs is length x batch_size x noclass
-    # to match target
-    external_outputs = [tf.transpose(softmax(o), [1,0,2]) for o in outputs]
-    # external_output = [tf.nn.softmax(o) for o in external_output]
-    # external_output[1] == character 1 for all batches
-    #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
-    self.layer_outputs = external_outputs
-    output = outputs[-1]
-    self.output = external_outputs[-1]
+      # External outputs is length x batch_size x noclass
+      # to match target
+      external_outputs = [tf.transpose(softmax(tf.reshape(o, [-1, self.length, noclass])),
+                                       [1,0,2]) for o in outputs]
+      # external_output = [tf.nn.softmax(o) for o in external_output]
+      # external_output[1] == character 1 for all batches
+      #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
+      self.layer_outputs = external_outputs
+      output = outputs[-1]
+      self.output = external_outputs[-1]
+    else:
+      self.layer_outputs = []
+
+      output = tf.add_n([curs[i][:,:,:1,:] * scales[i] for i in xrange(self.length)])
+      output = conv_linear(output, 1, 1, nmaps, noclass, True, 0.0, "output")
+      output = tf.reshape(output, [-1, self.length, noclass])
+      external_output = [tf.reshape(o, [-1, noclass])
+                         for o in list(tf.split(1, self.length, output))]
+      external_output = [tf.nn.softmax(o) for o in external_output]
+
+      self.output = external_output
 
     # Calculate cross-entropy loss and normalize it.
     targets = tf.concat(1, [make_dense(self.target[l], noclass)
