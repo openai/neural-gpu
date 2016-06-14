@@ -233,7 +233,7 @@ class NeuralGPUAtSize(object):
     keep_prob = 1.0 - self.do_training * (self.config.dropout * 8.0 / float(self.length))
     step = [tf.nn.dropout(first, keep_prob) * mask]
     curs = []
-    self.attention_probs = []
+    attention_probs_list = []
     for it in xrange(self.length):
       with tf.variable_scope("RX%d" % (it % self.config.rx_step)) as vs:
         if it >= self.config.rx_step:
@@ -242,32 +242,35 @@ class NeuralGPUAtSize(object):
 
         if FLAGS.do_attention:
           cur_att = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
+           # shape: bs x length x height x nmaps
           attention_vals = []
-          logit_table = []
+          logit_table = [] # shape: nattention x bs x 1
           for i in range(3):
             key = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'key%s' % i)
             val = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'val%s' % i)
             if i in [0,1]:
+              # self.task shape: bs
               val = tf.select(tf.equal(self.task, i), val, tf.stop_gradient(val))
               key = tf.select(tf.equal(self.task, i), key, tf.stop_gradient(key))
-            logit = tf.reduce_sum(cur_att * key, [1,2,3])
-            logit_table.append(tf.expand_dims(logit, 1))
+            logit = tf.reduce_sum(cur_att * key, [1,2,3]) # shape: bs
+            logit_table.append(tf.expand_dims(logit, 1)) 
             attention_vals.append(tf.expand_dims(val, 0))
 
           attention_probs = tf.transpose(tf.nn.softmax(tf.concat(1, logit_table)))
-          self.attention_probs.append(attention_probs)
-          attention_vals = tf.concat(0, attention_vals)
-          expanded_probs = attention_probs # add 3 more dimensions
+          attention_probs_list.append(attention_probs)
+          attention_vals = tf.concat(0, attention_vals) # shape: 3 x bs x len x h xnmaps
+          expanded_probs = attention_probs # make it 3 x bs x 1 x 1 x 1
           for i in range(3):
             expanded_probs = tf.expand_dims(expanded_probs, -1)
           cur = tf.reduce_sum(expanded_probs * attention_vals, [0])
-          import ipdb;ipdb.set_trace()
         else:
           cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
 
         curs.append(cur)
         cur = tf.nn.dropout(cur, keep_prob)
         step.append(cur * mask)
+
+    self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
 
     self.steps = [tf.reshape(s, [-1, self.length, height * nmaps]) for s in step]
     if FLAGS.do_lastout:

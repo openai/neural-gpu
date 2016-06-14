@@ -11,6 +11,7 @@ import os
 
 parser = argparse.ArgumentParser(description='Get scores')
 
+parser.add_argument("--key", type=str, default=None)
 parser.add_argument("--task", type=str, default='plot')
 parser.add_argument("--title", type=str, default='')
 parser.add_argument("--median", action='store_true')
@@ -18,41 +19,60 @@ parser.add_argument("--smoothing", type=int, default='1')
 parser.add_argument('files', type=str, nargs='+',
                     help='Log files to examine')
 
-def getscores(f):
-    lst = []
-    for line in f:
-        # New style: all relevant
-        if True or 'LARGE ERROR' in line:
-            loc, val = line.split()[-2:]
+def get_simple_scores(fname):
+    with open(fname) as f:
+        for line in f:
+            loc, val = line.split()
             try:
-                lst.append((int(loc), float(val)))
+                yield (int(loc), float(val))
             except ValueError:
                 break
-    return lst
 
-def getscores_for_fileset(filenames):
+def get_scores_for_key(fname, key):
+    with open(fname) as f:
+        for line in f:
+            if line.startswith('step '):
+                entries = line.split()
+                d = dict(zip(entries[::2], entries[1::2]))
+                try:
+                    yield (int(d['step']), float(d[key]))
+                except ValueError:
+                    break
+
+def create_results(dirname):
+    log0_fname = dirname + '/log0'
+    if os.path.exists(log0_fname):
+        with open(dirname+'/results', 'w') as f:
+            with open(log0_fname) as f2:
+                for line in f2:
+                    prefix = 'LARGE ERROR: '
+                    if line.startswith(prefix):
+                        f.write(line[len(prefix):])
+        return True
+    return False
+
+def getscores_for_dir(dirname, key=None):
+    if key is None:
+        if not os.path.exists(dirname+'/results'):
+            if not create_results(dirname):
+                return
+        scores = np.array(list(get_simple_scores(dirname+'/results')))
+    else:
+        scores = np.array(list(get_scores_for_key(dirname+'/log0', key)))
+    if not scores.size:
+        return None
+    locs, vals = scores.T
+    df = pd.Series(index=locs, data=vals)
+    return df
+
+
+def getscores_for_fileset(filenames, key=None):
     all_series = []
-    for fname in filenames:
-        if not fname.endswith('/results'):
-            fname += '/results'
-        if not os.path.exists(fname):
-            log0_fname = fname[:-7] + 'log0'
-            if os.path.exists(log0_fname):
-                with open(fname, 'w') as f:
-                    with open(log0_fname) as f2:
-                        for line in f2:
-                            prefix = 'LARGE ERROR: '
-                            if line.startswith(prefix):
-                                f.write(line[len(prefix):])
-            else:
-                continue
-        with open(fname) as f:
-            scores = getscores(f)
-            if not scores:
-                continue
-            locs, vals = np.array(scores).T
-            df = pd.Series(index=locs, data=vals)
-            all_series.append(df)
+    for dirname in filenames:
+        df = getscores_for_dir(dirname, key)
+        if df is None:
+            continue
+        all_series.append(df)
     data = pd.DataFrame(all_series).T
     if not len(data):
         return data
@@ -110,14 +130,14 @@ def main2(func, files):
             score_pairs = getscores(f)
         func(fname, score_pairs)
 
-def main(func, files):
+def main(func, files, key=None):
     def get_key(fname):
         return '/'.join(('-'.join(fname.split('-')[:-2])).split('/')[-2:])
     d = {}
     for f in files:
         d.setdefault(get_key(f), []).append(f)
     for k in d:
-        scores = getscores_for_fileset(d[k])
+        scores = getscores_for_fileset(d[k], key)
         if not len(scores):
             continue
         func(str(k), scores)
@@ -125,10 +145,10 @@ def main(func, files):
 if __name__ == '__main__':
     args =  parser.parse_args()
     if args.task == 'print':
-        main(print_results, args.files)
+        main(print_results, args.files, key=args.key)
     elif args.task == 'plot':
         plot_start()
-        main(plot_results, args.files)
+        main(plot_results, args.files, key=args.key)
         pylab.legend(loc=0)
         pylab.ylim((0, None))
         title = args.title
