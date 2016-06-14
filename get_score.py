@@ -74,7 +74,7 @@ def getscores_for_fileset(filenames, key=None):
             continue
         all_series.append(df)
     data = pd.DataFrame(all_series).T
-    if not len(data):
+    if len(data) < 2:
         return data
     data.values[0] = 1
     print data

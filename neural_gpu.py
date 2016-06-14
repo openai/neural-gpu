@@ -286,10 +286,10 @@ class NeuralGPUAtSize(object):
       outputs = [] # depth x batch_size x length x noclass
       with tf.variable_scope("output") as vs:
         for layer in curs:
-          output = conv_linear(layer[:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "o")
+          layer_output = conv_linear(layer[:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "o")
           # Was bs x length x 1 x noclass; collapse the 1.
-          output = tf.reshape(output, [-1, self.length, noclass])
-          outputs.append(output)
+          layer_output = tf.reshape(layer_output, [-1, self.length, noclass])
+          outputs.append(layer_output)
           vs.reuse_variables()
 
       if False:
@@ -305,10 +305,9 @@ class NeuralGPUAtSize(object):
         self.output = external_outputs[-1]
       elif True:
         outputs = tf.pack(outputs) # depth x batch_size x length x noclass
-        external_outputs = softmax(outputs) # same
-        self.layer_outputs = external_outputs
         output = tf.reduce_sum(outputs * tf.pack(scales), 0)
-        self.output = softmax(tf.transpose(last_output, [1,0,2])) # length x batch_size x noclass
+        self.layer_outputs = softmax(outputs)
+        self.output = softmax(tf.transpose(output, [1,0,2])) # length x batch_size x noclass
       else:
         self.layer_outputs = [softmax(o) for o in outputs]
         # if we really end up using this, can redefine scales earlier
