@@ -272,10 +272,6 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
                         l <= curriculum.max_cur_length)
 
   # Normalize and print out accumulated statistics.
-  acc_loss /= step_count
-  step_time /= FLAGS.steps_per_epoch
-  acc_seq_err = float(acc_seq_err) / (step_count * batch_size)
-  acc_errors = float(acc_errors) / acc_total if acc_total > 0 else 1.0
   message = ('step %s step-time %s ' % (global_step, results_record.avg_step_time) +
              'lr %.8f pull %.3f ' % (model.lr, model.pull) +
              'grad-norm %.8f ' % results_record.avg_grad_norm +
@@ -285,8 +281,8 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
                                                    100*results_record.avg_seq_err))
   data.print_out(message)
 
-  decent = (acc_seq_err < model.config.curriculum_bound)
-  extended = curriculum.consider_extending(acc_seq_err)
+  decent = (results_record.avg_seq_err < model.config.curriculum_bound)
+  extended = curriculum.consider_extending(results_record)
   # If errors are below the curriculum threshold, move curriculum forward.
   if decent:
     if FLAGS.quantize:
@@ -299,11 +295,11 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
     else:
       data.print_out("  Averaging parameters.")
       sess.run(model.avg_op)
-      if acc_seq_err < (model.config.curriculum_bound / 3.0):
+      if results_record.avg_seq_err < (model.config.curriculum_bound / 3.0):
         model.lr *= 0.98
 
   # Lower learning rate if we're worse than the last 3 checkpoints.
-  acc_perp = data.safe_exp(acc_loss)
+  acc_perp = data.safe_exp(results_record.avg_loss)
   if acc_perp > thresh:
     data.print_out("Lower learning rate: %s %s" % (acc_perp, thresh))
     model.lr *= 0.98

@@ -32,7 +32,9 @@ class NeuralConfig(object):
     return msg3
 
 class Curriculum(object):
-  def __init__(self, model_config):
+  def __init__(self, generators, model_config):
+    self.generators = generators
+
     self.min_length = model_config.min_length
     self.max_length = model_config.max_length
     self.model_config = model_config
@@ -72,35 +74,31 @@ class Curriculum(object):
       l = self.draw_length(cur_length)
     return (generator.get_batch(l, batch_size), l)
 
-  def tasks(self, generators):
+  def tasks(self):
     """List of task names"""
-    pass
+    return [g.name for g in self.generators]
 
   def consider_extending(self, results):
     """Interpret the results"""
     pass
 
   def draw_generator(self):
-    pass
+    return np.random.choice(self.generators)
 
   def get_cur_length(self, generator):
     pass
 
 class DefaultCurriculum(Curriculum):
-  def __init__(self, generator, model_config):
-    super(DefaultCurriculum, self).__init__(model_config)
-    self.generators = generator
+  def __init__(self, generators, model_config):
+    super(DefaultCurriculum, self).__init__(generators, model_config)
 
     self.max_cur_length = min(self.min_length + 3, self.max_length)
-
-  def draw_generator(self):
-    return self.generators[0]
 
   def get_cur_length(self, generator):
     return self.max_cur_length
 
   def consider_extending(self, result):
-    if result.accuracy > self.model_config.curriculum_bound:
+    if result.avg_seq_err > self.model_config.curriculum_bound:
       return False
     if self.max_cur_length < self.max_length:
       self.max_cur_length += 1
@@ -110,10 +108,6 @@ class DefaultCurriculum(Curriculum):
 class MixedCurriculum(Curriculum):
   def __init__(self, generators, model_config):
     super(MixedCurriculum, self).__init__(generators, model_config)
-    self.generators = generators
-
-  def draw_generator(self):
-    pass
 
   def get_cur_length(self, generator):
     pass
@@ -149,8 +143,6 @@ class NeuralGPUResult(object):
       (self.length, self.loss, self.input.shape[1], err, seq_err)
 
 class ResultsRecord(object):
-  
-
   def __init__(self, batch_size):
     self.batch_size = batch_size
 
@@ -162,6 +154,7 @@ class ResultsRecord(object):
     self.num_batches = 0
     self.num_below = 0
     self.step_time = 0.
+    self.total = 0.
 
   def feed(self, results, step_time, below_curriculum):
     self.num_batches += 1
@@ -177,21 +170,21 @@ class ResultsRecord(object):
       self.total += tot
 
   @property
-  def avg_step_time():
+  def avg_step_time(self):
     return self.step_time / self.num_batches
 
   @property
-  def avg_grad_norm():
+  def avg_grad_norm(self):
     return self.grad_norm / self.num_batches
 
   @property
-  def avg_loss():
+  def avg_loss(self):
     return self.loss / self.num_below
 
   @property
-  def avg_err():
+  def avg_err(self):
     return self.err / self.num_below
 
   @property
-  def avg_seq_err():
+  def avg_seq_err(self):
     return self.seq_err / self.num_below

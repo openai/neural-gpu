@@ -268,13 +268,16 @@ class NeuralGPUAtSize(object):
         outputs.append(output)
         vs.reuse_variables()
 
-    external_outputs = [softmax(o) for o in outputs]
+    # External outputs is length x batch_size x noclass
+    # to match target
+    external_outputs = [tf.transpose(softmax(o), [1,0,2]) for o in outputs]
     # external_output = [tf.nn.softmax(o) for o in external_output]
     # external_output[1] == character 1 for all batches
     #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
     self.layer_outputs = external_outputs
     output = outputs[-1]
     self.output = external_outputs[-1]
+
     # Calculate cross-entropy loss and normalize it.
     targets = tf.concat(1, [make_dense(self.target[l], noclass)
                             for l in xrange(self.length)])
