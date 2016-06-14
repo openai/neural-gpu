@@ -303,7 +303,7 @@ class NeuralGPUAtSize(object):
         self.layer_outputs = external_outputs
         output = outputs[-1]
         self.output = external_outputs[-1]
-      elif True:
+      elif False:
         outputs = tf.pack(outputs) # depth x batch_size x length x noclass
         external_outputs = softmax(outputs) # same
         self.layer_outputs = external_outputs
