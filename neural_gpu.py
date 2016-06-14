@@ -272,19 +272,15 @@ def make_dense(targets, noclass):
     dense = tf.sparse_to_dense(indices, length, 1.0, 0.0)
   return tf.reshape(dense, [-1, noclass])
 
+def softmax(array):
+  """Perform a softmax along the final axis but preserve shape."""
+  nclass = array.get_shape()[-1].value
+  result = tf.nn.softmax(tf.reshape(array, [-1, nclass]))
+  tf.reshape(result, [-1] + [x.value for x in array.get_shape()[1:]])
 
 def check_nonzero(sparse):
   """In a sparse batch of ints, make 1 if it's > 0 and 0 else."""
   return tf.clip_by_value(sparse, 0, 1)
-  if True:#with tf.device("/cpu:0"):
-    shape = tf.shape(sparse)
-    batch_size = shape[0]
-    sparse = tf.minimum(sparse, 1)
-    indices = sparse + 2 * tf.range(batch_size)
-    dense = tf.sparse_to_dense(indices, tf.expand_dims(2 * batch_size, 0),
-                               1.0, 0.0)
-    reshaped = tf.reshape(dense, [-1, 2])
-  return tf.reshape(tf.slice(reshaped, [0, 0], [-1, 1]), [-1])
 
 class NeuralGPUAtSize(object):
   """Instantiate the NeuralGPU at a given block size."""
@@ -345,14 +341,13 @@ class NeuralGPUAtSize(object):
     # Computation steps.
     keep_prob = 1.0 - self.do_training * (self.config.dropout * 8.0 / float(self.length))
     step = [tf.nn.dropout(first, keep_prob) * mask]
-    outputs = []
+    curs = []
     self.attention_probs = []
     for it in xrange(self.length):
       with tf.variable_scope("RX%d" % (it % self.config.rx_step)) as vs:
         if it >= self.config.rx_step:
           vs.reuse_variables()
         cur = step[it]
-
 
         if FLAGS.do_attention:
           cur_att = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
@@ -378,31 +373,33 @@ class NeuralGPUAtSize(object):
         else:
           cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
 
-        outputs.append(tf.slice(cur, [0, 0, 0, 0], [-1, -1, 1, -1]))
+        curs.append(cur)
         cur = tf.nn.dropout(cur, keep_prob)
         step.append(cur * mask)
 
     self.steps = [tf.reshape(s, [-1, self.length, height * nmaps]) for s in step]
-    # Output is the n-th step output; n = current length, as in scales.
-    output = outputs[-1]
     # Final convolution to get logits, list outputs.
-    output = conv_linear(output, 1, 1, nmaps, noclass, True, 0.0, "output")
-    output = tf.reshape(output, [-1, self.length, noclass])
-    external_output = [tf.reshape(o, [-1, noclass])
-                       for o in list(tf.split(1, self.length, output))]
-    external_output = [tf.nn.softmax(o) for o in external_output]
+    outputs = []
+    with tf.variable_scope("output") as vs:
+      for i, layer in enumerate(curs):
+        output = conv_linear(layer[:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "o")
+        output = tf.reshape(output, [-1, self.length, noclass])
+        outputs.append(output)
+        vs.reuse_variables()
+
+    external_outputs = [softmax(o) for o in outputs]
+    # external_output = [tf.nn.softmax(o) for o in external_output]
     # external_output[1] == character 1 for all batches
     #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
-    self.output = external_output
+    self.layer_outputs = external_outputs
+    output = outputs[-1]
+    self.final_output = external_outputs[-1]
     # Calculate cross-entropy loss and normalize it.
     targets = tf.concat(1, [make_dense(self.target[l], noclass)
                             for l in xrange(self.length)])
     targets = tf.reshape(targets, [-1, noclass])
-    real_targets = ((0.5*targets + 0.5*tf.stop_gradient(
-      tf.nn.softmax(tf.reshape(output, [-1, noclass])))) if
-                    FLAGS.smooth_targets else targets)
     xent = tf.reshape(tf.nn.softmax_cross_entropy_with_logits(
-        tf.reshape(output, [-1, noclass]), real_targets), [-1, self.length])
+        tf.reshape(output, [-1, noclass]), targets), [-1, self.length])
     perp_loss = tf.reduce_sum(xent * tf.reshape(mask, [-1, self.length]))
     perp_loss /= tf.cast(batch_size, dtype=tf.float32)
     perp_loss /= self.length
@@ -423,6 +420,7 @@ class NeuralGPUAtSize(object):
       update = adam.apply_gradients(zip(grads, params),
                                     global_step=self.model.global_step)
       self.update = update
+    #import ipdb; ipdb.set_trace()
 
     def __repr__(self):
       return '<NeuralGPUAtSize %s>' % (self.length)

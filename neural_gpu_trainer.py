@@ -64,7 +64,6 @@ def define_flags():
   tf.app.flags.DEFINE_integer("mode", 0, "Mode: 0-train other-decode.")
   tf.app.flags.DEFINE_bool("animate", False, "Whether to produce an animation.")
   tf.app.flags.DEFINE_bool("quantize", False, "Whether to quantize variables.")
-  tf.app.flags.DEFINE_bool("smooth_targets", False, "Smooth targets.")
   tf.app.flags.DEFINE_float("smooth_grad", 0.0, "Whether to avoid clipping gradient")
   tf.app.flags.DEFINE_float("smooth_grad_tanh", 0.0, "Whether to avoid clipping tanh gradient")
   tf.app.flags.DEFINE_string("task", "rev", "Which task are we learning?")
