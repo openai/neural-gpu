@@ -39,11 +39,7 @@ class Curriculum(object):
     self.max_length = model_config.max_length
     self.model_config = model_config
 
-  def is_valid_length(self, l):
-    """Is this a valid length to pass in?"""
-    return True
-
-  def draw_length(self, cur_length):
+  def draw_length(self, cur_length, generator):
     l = None
     while l is None:
       # Select the length for curriculum learning.
@@ -54,7 +50,7 @@ class Curriculum(object):
       if np.random.randint(100) < 25:
         l = max(l, np.random.randint(self.min_length, self.max_length + 1))
 
-      if not self.is_valid_length(l):
+      if not generator.is_valid_length(l):
         l = None
 
     return l
@@ -62,7 +58,7 @@ class Curriculum(object):
   def test_examples(self, batch_size, task_name=None):
     generator = [g for g in self.generators if g.name == task_name][0]
     for l in np.arange(self.min_length, self.max_length + 1):
-      if self.is_valid_length(l):
+      if generator.is_valid_length(l):
         yield (generator.get_batch(l, batch_size), l)
 
   def draw_example(self, batch_size, l=None, generator=None):
@@ -71,7 +67,7 @@ class Curriculum(object):
       generator = self.draw_generator()
     if l is None:
       cur_length = self.get_cur_length(generator)
-      l = self.draw_length(cur_length)
+      l = self.draw_length(cur_length, generator)
     return (generator.get_batch(l, batch_size), l)
 
   def tasks(self):
@@ -102,7 +98,7 @@ class DefaultCurriculum(Curriculum):
       return False
     if self.max_cur_length < self.max_length:
       self.max_cur_length += 1
-      while not self.is_valid_length(self.max_cur_length) and self.max_cur_length < self.max_length:
+      while not self.generators[0].is_valid_length(self.max_cur_length) and self.max_cur_length < self.max_length:
         self.max_cur_length += 1
 
 class MixedCurriculum(Curriculum):
