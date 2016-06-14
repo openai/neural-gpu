@@ -157,7 +157,7 @@ def softmax(array):
   """Perform a softmax along the final axis but preserve shape."""
   nclass = array.get_shape()[-1].value
   result = tf.nn.softmax(tf.reshape(array, [-1, nclass]))
-  tf.reshape(result, [-1] + [x.value for x in array.get_shape()[1:]])
+  return tf.reshape(result, [-1] + [x.value for x in array.get_shape()[1:]])
 
 def check_nonzero(sparse):
   """In a sparse batch of ints, make 1 if it's > 0 and 0 else."""

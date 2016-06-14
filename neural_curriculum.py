@@ -1,3 +1,6 @@
+import data_utils
+import numpy as np
+
 class NeuralConfig(object):
   """Initial configuration settings for model"""
 
@@ -86,7 +89,7 @@ class Curriculum(object):
 class DefaultCurriculum(Curriculum):
   def __init__(self, generator, model_config):
     super(DefaultCurriculum, self).__init__(model_config)
-    self.generators = [generator]
+    self.generators = generator
 
     self.max_cur_length = min(self.min_length + 3, self.max_length)
 
@@ -146,5 +149,49 @@ class NeuralGPUResult(object):
       (self.length, self.loss, self.input.shape[1], err, seq_err)
 
 class ResultsRecord(object):
-  def __init__(self):
-    pass
+  
+
+  def __init__(self, batch_size):
+    self.batch_size = batch_size
+
+    self.loss = 0.
+    self.err = 0.
+    self.seq_err = 0.
+    self.acc = 0.
+    self.grad_norm = 0.
+    self.num_batches = 0
+    self.num_below = 0
+    self.step_time = 0.
+
+  def feed(self, results, step_time, below_curriculum):
+    self.num_batches += 1
+    self.num_below += below_curriculum
+
+    self.step_time += step_time
+    self.grad_norm += results.grad_norm
+    if below_curriculum:
+      self.loss += results.loss
+      err, tot, seq_err = results.accuracy()
+      self.err += err
+      self.seq_err += seq_err
+      self.total += tot
+
+  @property
+  def avg_step_time():
+    return self.step_time / self.num_batches
+
+  @property
+  def avg_grad_norm():
+    return self.grad_norm / self.num_batches
+
+  @property
+  def avg_loss():
+    return self.loss / self.num_below
+
+  @property
+  def avg_err():
+    return self.err / self.num_below
+
+  @property
+  def avg_seq_err():
+    return self.seq_err / self.num_below

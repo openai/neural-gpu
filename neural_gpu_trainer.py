@@ -31,6 +31,7 @@ from tensorflow.python.platform import gfile
 
 import data_utils as data
 import neural_gpu
+import neural_curriculum
 
 def define_flags():
   tf.app.flags.DEFINE_float("lr", 0.001, "Learning rate.")
@@ -146,7 +147,7 @@ def get_config_from_flags(checkpoint_dir = None):
 
   data.print_out("NN ", newline=False)
 
-  config = neural_gpu.NeuralConfig(FLAGS)
+  config = neural_curriculum.NeuralConfig(FLAGS)
 
   # Check data sizes.
   while len(data.bins) > 1 and data.bins[-2] > config.max_length + EXTRA_EVAL:
@@ -256,8 +257,7 @@ class Timer(object):
 def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
   curriculum = model.curriculum
   global_step, = sess.run( [model.global_step])
-  acc_loss, acc_total, acc_errors, acc_seq_err = 0.0, 0, 0, 0
-  acc_grad_norm, step_count, step_time = 0.0, 0, 0.0
+  results_record = neural_curriculum.ResultsRecord(batch_size)
   for _ in xrange(nsteps):
     global_step += 1
 
@@ -266,31 +266,24 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
     # Run a step and time it.
     start_time = time.time()
     result = model.step(sess, batch, True)
-    step_time += time.time() - start_time
-    acc_grad_norm += float(result.grad_norm)
 
     # Accumulate statistics only if we did not exceed curriculum length.
-    if l <= curriculum.max_cur_length:
-      step_count += 1
-      acc_loss += result.loss
-      errors, total, seq_err = result.accuracy()
-      acc_total += total
-      acc_errors += errors
-      acc_seq_err += seq_err
+    results_record.feed(result, time.time() - start_time,
+                        l <= curriculum.max_cur_length)
 
   # Normalize and print out accumulated statistics.
   acc_loss /= step_count
   step_time /= FLAGS.steps_per_epoch
   acc_seq_err = float(acc_seq_err) / (step_count * batch_size)
-  prev_seq_err = max(0.0, acc_seq_err - 0.02)  # No noise at error < 2%.
   acc_errors = float(acc_errors) / acc_total if acc_total > 0 else 1.0
-  msg1 = "step %d step-time %.2f" % (global_step, step_time)
-  msg2 = "lr %.8f pull %.3f" % (model.lr, model.pull)
-  msg3 = ("%s %s grad-norm %.8f"
-          % (msg1, msg2, acc_grad_norm / FLAGS.steps_per_epoch))
-  data.print_out("%s len %d ppx %.8f errors %.2f sequence-errors %.2f" %
-                 (msg3, curriculum.max_cur_length, data.safe_exp(acc_loss),
-                  100*acc_errors, 100*acc_seq_err))
+  message = ('step %s step-time %s ' % (global_step, results_record.avg_step_time) +
+             'lr %.8f pull %.3f ' % (model.lr, model.pull) +
+             'grad-norm %.8f ' % results_record.avg_grad_norm +
+             'len %d ppx %.8f ' % (curriculum.max_cur_length,
+                                   data.safe_exp(results_record.avg_loss)) +
+             'errors %.2f sequence-errors %.2f' % (100*results_record.avg_err,
+                                                   100*results_record.avg_seq_err))
+  data.print_out(message)
 
   decent = (acc_seq_err < model.config.curriculum_bound)
   extended = curriculum.consider_extending(acc_seq_err)
