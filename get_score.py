@@ -36,7 +36,16 @@ def getscores_for_fileset(filenames):
         if not fname.endswith('/results'):
             fname += '/results'
         if not os.path.exists(fname):
-            continue
+            log0_fname = fname[:-7] + 'log0'
+            if os.path.exists(log0_fname):
+                with open(fname, 'w') as f:
+                    with open(log0_fname) as f2:
+                        for line in f2:
+                            prefix = 'LARGE ERROR: '
+                            if line.startswith(prefix):
+                                f.write(line[len(prefix):])
+            else:
+                continue
         with open(fname) as f:
             scores = getscores(f)
             if not scores:

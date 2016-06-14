@@ -117,8 +117,8 @@ def load_model(sess, checkpoint_dir):
   # possibly tf.reset_default_graph()
   with open(os.path.join(checkpoint_dir, 'all_args')) as f:
     options = yaml.load(f)
-  for key in options:
-    FLAGS.__flags[key] = options[key]
+  FLAGS._parse_flags()
+  FLAGS.__flags.update(options)
   data.forward_max = max(FLAGS.forward_max, data.bins[-1])
   config = neural_curriculum.NeuralConfig(FLAGS)
   model = neural_gpu.NeuralGPU(config)
