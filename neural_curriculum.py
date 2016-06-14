@@ -183,8 +183,8 @@ class ResultsRecord(object):
 
   @property
   def avg_err(self):
-    return self.err / self.num_below
+    return self.err / self.total
 
   @property
   def avg_seq_err(self):
-    return self.seq_err / self.num_below
+    return self.seq_err / (self.num_below * self.batch_size)

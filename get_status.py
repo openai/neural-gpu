@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 from __future__ import print_function
 import glob
 import subprocess
@@ -39,7 +40,7 @@ def locked_on_server(server):
             print('ERROR! %s dead.' % server)
             return []
     else:
-        output = subprocess.check_output(['ssh', server, cmd], timeout=5)
+        output = subprocess.check_output(['ssh', server, cmd])
     return output.split()
 
 class Results(object):
