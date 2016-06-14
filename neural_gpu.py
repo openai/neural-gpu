@@ -25,23 +25,6 @@ import neural_curriculum
 
 FLAGS = tf.app.flags.FLAGS
 
-def conv_linear(args, kw, kh, nin, nout, do_bias, bias_start, prefix):
-  """Convolutional linear map."""
-  assert args is not None
-  if not isinstance(args, (list, tuple)):
-    args = [args]
-  with tf.variable_scope(prefix):
-    k = tf.get_variable("CvK", [kw, kh, nin, nout])
-    if len(args) == 1:
-      res = tf.nn.conv2d(args[0], k, [1, 1, 1, 1], "SAME")
-    else:
-      res = tf.nn.conv2d(tf.concat(3, args), k, [1, 1, 1, 1], "SAME")
-    if not do_bias: return res
-    bias_term = tf.get_variable("CvB", [nout],
-                                initializer=tf.constant_initializer(0.0))
-    return res + bias_term + bias_start
-
-
 def tf_cut_function(val, vlo, vhi, glo, ghi):
   if vlo is None:
     return val
@@ -72,21 +55,37 @@ def tanh_cutoff(x, cutoff):
   glo, ghi = (-tcut, tcut) if tcut else (None, None)
   return tf_cut_function(z, -1, 1, glo, ghi)
 
-def conv_gru(inpts, mem, kw, kh, nmaps, cutoff, prefix):
+def conv_linear(args, kw, kh, nin, nout, do_bias, bias_start, prefix):
+  """Convolutional linear map."""
+  assert args is not None
+  if not isinstance(args, (list, tuple)):
+    args = [args]
+  with tf.variable_scope(prefix):
+    k = tf.get_variable("CvK", [kw, kh, nin, nout])
+    if len(args) == 1:
+      res = tf.nn.conv2d(args[0], k, [1, 1, 1, 1], "SAME")
+    else:
+      res = tf.nn.conv2d(tf.concat(3, args), k, [1, 1, 1, 1], "SAME")
+    if not do_bias: return res
+    bias_term = tf.get_variable("CvB", [nout],
+                                initializer=tf.constant_initializer(0.0))
+    return res + bias_term + bias_start
+
+def conv_gru(mem, kw, kh, nmaps, cutoff, prefix):
   """Convolutional GRU."""
   def conv_lin(args, suffix, bias_start):
     return conv_linear(args, kw, kh, len(args) * nmaps, nmaps, True, bias_start,
                        prefix + "/" + suffix)
-  reset = sigmoid_cutoff(conv_lin(inpts + [mem], "r", 1.0), cutoff)
-  candidate = tanh_cutoff(conv_lin(inpts + [reset * mem], "c", 0.0), FLAGS.cutoff_tanh)
-  # candidate = tf.tanh(conv_lin(inpts + [reset * mem], "c", 0.0))
-  gate = sigmoid_cutoff(conv_lin(inpts + [mem], "g", 1.0), cutoff)
+  reset = sigmoid_cutoff(conv_lin([mem], "r", 1.0), cutoff)
+  candidate = tanh_cutoff(conv_lin([reset * mem], "c", 0.0), FLAGS.cutoff_tanh)
+  # candidate = tf.tanh(conv_lin([reset * mem], "c", 0.0))
+  gate = sigmoid_cutoff(conv_lin([mem], "g", 1.0), cutoff)
   return gate * mem + (1 - gate) * candidate
 
 def gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, suffix):
   # Do nconvs-many CGRU steps.
   for layer in xrange(nconvs):
-    cur = conv_gru([], cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix))
+    cur = conv_gru(cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix))
     cur *= mask
   return cur
 
@@ -262,6 +261,7 @@ class NeuralGPUAtSize(object):
           for i in range(3):
             expanded_probs = tf.expand_dims(expanded_probs, -1)
           cur = tf.reduce_sum(expanded_probs * attention_vals, [0])
+          import ipdb;ipdb.set_trace()
         else:
           cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
 
@@ -270,7 +270,7 @@ class NeuralGPUAtSize(object):
         step.append(cur * mask)
 
     self.steps = [tf.reshape(s, [-1, self.length, height * nmaps]) for s in step]
-    if False:
+    if FLAGS.do_lastout:
       # Final convolution to get logits, list outputs.
       outputs = []
       with tf.variable_scope("output") as vs:
