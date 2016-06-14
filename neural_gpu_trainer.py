@@ -117,7 +117,7 @@ def load_model(sess, checkpoint_dir):
   for key in options:
     FLAGS.__flags[key] = options[key]
   data.forward_max = max(FLAGS.forward_max, data.bins[-1])
-  config = neural_gpu.NeuralConfig(FLAGS)
+  config = neural_curriculum.NeuralConfig(FLAGS)
   model = neural_gpu.NeuralGPU(config)
   ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
   if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
@@ -196,7 +196,7 @@ def initialize(sess, checkpoint_dir=None):
                    % ckpt.model_checkpoint_path)
     model.saver.restore(sess, ckpt.model_checkpoint_path)
 
-  curriculum = neural_gpu.DefaultCurriculum(data_generators, model.config)
+  curriculum = neural_curriculum.DefaultCurriculum(data_generators, model.config)
   model.curriculum = curriculum
 
   # Return the model and needed variables.
@@ -320,7 +320,7 @@ def run_evaluation(sess, model, batch_size):
   global_step, = sess.run( [model.global_step])
   for task in model.curriculum.tasks():
     errors = []
-    for length, batch in model.curriculum.test_examples(batch_size, task):
+    for batch, length in model.curriculum.test_examples(batch_size, task):
       _, seq_err, _ = single_test(length, model, sess, task,
                                   FLAGS.nprint, batch_size, batch=batch)
       errors.append(seq_err)

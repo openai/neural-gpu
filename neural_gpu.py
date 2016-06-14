@@ -21,128 +21,9 @@ import tensorflow as tf
 import data_utils
 import random
 import numpy as np
+import neural_curriculum
 
 FLAGS = tf.app.flags.FLAGS
-
-class NeuralConfig(object):
-  """Initial configuration settings for model"""
-
-  config_keys = '''nmaps niclass noclass dropout rx_step max_grad_norm
-  cutoff nconvs kw kh height mode lr pull pull_incr
-  min_length batch_size grad_noise_scale task
-  train_data_size init_weight curriculum_bound
-  '''.split() 
-
-  def __init__(self, FLAGS, **kws):
-    for key in self.config_keys:
-      val = kws.get(key, getattr(FLAGS, key, None))
-      setattr(self, key, val)
-
-    min_length = 3
-    max_length = min(FLAGS.max_length, data_utils.bins[-1])
-    assert max_length + 1 > min_length
-    self.max_length = max_length
-    self.min_length = min_length
-
-  def __str__(self):
-    msg1 = ("layers %d kw %d h %d kh %d relax %d batch %d noise %.2f task %s"
-            % (self.nconvs, self.kw, self.height, self.kh, self.rx_step,
-               self.batch_size, self.grad_noise_scale, self.task))
-    msg2 = "data %d %s" % (self.train_data_size, msg1)
-    msg3 = ("cut %.2f pull %.3f lr %.2f iw %.2f cr %.2f nm %d d%.4f gn %.2f %s" %
-            (self.cutoff, self.pull_incr, self.lr, self.init_weight,
-            self.curriculum_bound, self.nmaps, self.dropout, self.max_grad_norm, msg2))
-    return msg3
-
-class Curriculum(object):
-  def __init__(self, model_config):
-    self.min_length = model_config.min_length
-    self.max_length = model_config.max_length
-    self.model_config = model_config
-
-  def is_valid_length(self, l):
-    """Is this a valid length to pass in?"""
-    return True
-
-  def draw_length(self, cur_length):
-    l = None
-    while l is None:
-      # Select the length for curriculum learning.
-      l = np.random.randint(self.min_length, self.max_cur_length + 1)
-      if np.random.randint(100) < 60: # Prefer longer stuff 60% of time.
-        l = max(l, np.random.randint(self.min_length, cur_length + 1))
-      # Mixed curriculum learning: in 25% of cases go to an even larger length.
-      if np.random.randint(100) < 25:
-        l = max(l, np.random.randint(self.min_length, self.max_length + 1))
-
-      if not self.is_valid_length(l):
-        l = None
-
-    return l
-
-  def tasks(self, generators):
-    """List of task names"""
-    pass
-
-  def test_examples(self, batch_size, task_name):
-    """Return a bunch of test examples"""
-    pass
-
-  def draw_example(self, batch_size, l=None):
-    """Draw a random example"""
-    pass
-
-  def consider_extending(self, results):
-    """Interpret the results"""
-    pass
-
-class DefaultCurriculum(Curriculum):
-  def __init__(self, generators, model_config):
-    super(MixedCurriculum, self).__init__(model_config)
-    self.generators = generators
-
-    self.max_cur_length = min(self.min_length + 3, self.max_length)
-
-    self.prev_acc_perp = None
-    self.prev_seq_err = None
-
-  def tasks(self):
-    return [g.name for g in self.generators]
-
-  def is_valid_length(self, l):
-    return any(g.is_valid_length(l) for g in self.generators)
-
-  def test_examples(self, batch_size, task_name):
-    for g in self.generators:
-      if g.name == task_name:
-        break
-    else:
-      raise KeyError("No such task")
-    for l in np.arange(self.min_length, self.max_length + 1):
-      if self.is_valid_length(l):
-        yield (l, self.draw_example(batch_size, l)[0])
-
-  def draw_example(self, batch_size, l=None):
-    generator = random.choice(self.generators)
-
-    if l is None:
-      l = self.draw_length(self.max_cur_length)
-    result = generator.get_batch(l, batch_size)
-    return (result, l)
-
-  def consider_extending(self, acc):
-    if acc > self.model_config.curriculum_bound:
-      return False
-    if self.max_cur_length < self.max_length:
-      self.max_cur_length += 1
-      while not self.is_valid_length(self.max_cur_length) and self.max_cur_length < self.max_length:
-        self.max_cur_length += 1
-
-class MixedCurriculum(Curriculum):
-  def __init__(self, generators, model_config):
-    super(MixedCurriculum, self).__init__(generators, model_config)
-    self.generators = generators
-    
 
 def conv_linear(args, kw, kh, nin, nout, do_bias, bias_start, prefix):
   """Convolutional linear map."""
@@ -393,7 +274,7 @@ class NeuralGPUAtSize(object):
     #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
     self.layer_outputs = external_outputs
     output = outputs[-1]
-    self.final_output = external_outputs[-1]
+    self.output = external_outputs[-1]
     # Calculate cross-entropy loss and normalize it.
     targets = tf.concat(1, [make_dense(self.target[l], noclass)
                             for l in xrange(self.length)])
@@ -502,35 +383,10 @@ class NeuralGPU(object):
     if get_steps:
       feed_out['step'] = instance.steps
     feed_out['loss'] = instance.loss
+    feed_out['layer_outputs'] = instance.layer_outputs
     feed_out['output'] = instance.output
     if FLAGS.do_attention:
       feed_out['attention'] = instance.attention_probs
     res = sess.run(feed_out, feed_in)
-    return NeuralGPUResult(res, inp, target, taskid)
+    return neural_curriculum.NeuralGPUResult(res, inp, target, taskid)
 
-class NeuralGPUResult(object):
-  grad_norm = None
-  back_update = None
-  loss = None
-  output = None
-  step = None
-  attention = None
-
-  def __init__(self, vals, inp, target, taskid):
-    self.__dict__.update(vals)
-    self.input = inp
-    self.target = target
-    self.taskid = taskid
-
-  def accuracy(self, nprint=0):
-    batch_size = self.input.shape[1]
-    return data_utils.accuracy(self.input, self.output, self.target, batch_size, nprint)
-
-  @property
-  def length(self):
-    return (self.input[:,0] > 0).sum()
-
-  def __repr__(self):
-    err, tot, seq_err = self.accuracy()
-    return '<NeuralGPUResult: length=%s loss=%s bs=%s err=%s seq_err=%s>' % \
-      (self.length, self.loss, self.input.shape[1], err, seq_err)
