@@ -182,12 +182,16 @@ class NeuralGPUAtSize(object):
 
   def construct_mask(self) :
     # Mask to 0-out padding space in each step.
+    # bmask: length x batch_size
     bmask = [(self.input[:,l] > 0) | (self.target[l] > 0) for l in xrange(self.length)]
-    mask = [tf.to_float(tf.reshape(m, [-1, 1])) for m in bmask]
+    # mask: length x batch_size x 1
+    mask = [tf.to_float(tf.expand_dims(m, 1)) for m in bmask]
     # Use a shifted mask for step scaling and concatenated for weights.
+    # shifted_mask: (length + 1) x batch_size x 1
     shifted_mask = mask + [tf.zeros_like(mask[0])]
     scales = [shifted_mask[i] * (1 - shifted_mask[i+1]) for i in xrange(self.length)]
     scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
+    #scales:  length x batch_size x 1 x 1 x 1
     mask = tf.concat(1, mask)  # batch x length
     mask = tf.reshape(mask, [-1, self.length, 1, 1])
     return mask, scales
@@ -275,24 +279,37 @@ class NeuralGPUAtSize(object):
     self.steps = [tf.reshape(s, [-1, self.length, height * nmaps]) for s in step]
     if FLAGS.do_lastout:
       # Final convolution to get logits, list outputs.
-      outputs = []
+      outputs = [] # depth x batch_size x length x noclass
       with tf.variable_scope("output") as vs:
-        for i, layer in enumerate(curs):
+        for layer in curs:
           output = conv_linear(layer[:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "o")
-          #output = tf.reshape(output, [-1, self.length, noclass])
+          # Was bs x length x 1 x noclass; collapse the 1.
+          output = tf.reshape(output, [-1, self.length, noclass])
           outputs.append(output)
           vs.reuse_variables()
 
-      # External outputs is length x batch_size x noclass
-      # to match target
-      external_outputs = [tf.transpose(softmax(tf.reshape(o, [-1, self.length, noclass])),
-                                       [1,0,2]) for o in outputs]
-      # external_output = [tf.nn.softmax(o) for o in external_output]
-      # external_output[1] == character 1 for all batches
-      #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
-      self.layer_outputs = external_outputs
-      output = outputs[-1]
-      self.output = external_outputs[-1]
+      if False:
+        # External outputs is length x batch_size x noclass
+        # to match target
+        external_outputs = [tf.transpose(softmax(tf.reshape(o, [-1, self.length, noclass])),
+                                         [1,0,2]) for o in outputs]
+        # external_output = [tf.nn.softmax(o) for o in external_output]
+        # external_output[1] == character 1 for all batches
+        #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
+        self.layer_outputs = external_outputs
+        output = outputs[-1]
+        self.output = external_outputs[-1]
+      else:
+        self.layer_outputs = [softmax(o) for o in outputs]
+        # if we really end up using this, can redefine scales earlier
+        output = tf.add_n([o * tf.reshape(s, [-1, 1, 1])
+                           for o, s in zip(outputs, scales)])
+        # output: batch_size x length x noclass
+        # external_output: batch_size x noclass
+        external_output = [tf.reshape(o, [-1, noclass])
+                           for o in tf.split(1, self.length, output)]
+        external_output = [tf.nn.softmax(o) for o in external_output]
+        self.output = external_output
     else:
       self.layer_outputs = []
 

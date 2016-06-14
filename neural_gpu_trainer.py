@@ -142,6 +142,10 @@ def get_config_from_flags(checkpoint_dir = None):
     checkpoint_dir = get_checkpoint_dir()
   if not gfile.IsDirectory(checkpoint_dir):
     data.print_out("Creating checkpoint directory %s." % checkpoint_dir)
+    try:
+      gfile.MkDir(os.path.dirname(checkpoint_dir))
+    except OSError as e:
+      pass
     gfile.MkDir(checkpoint_dir)
 
   if FLAGS.jobid >= 0:

@@ -14,7 +14,10 @@ def possible_pids():
 def main():
     used = set()
     for pid in possible_pids():
-        used = used.union(used_by_pid(pid))
+        try:
+            used = used.union(used_by_pid(pid))
+        except IOError as e:
+            continue
     print ' '.join(sorted(used))
 
 if __name__ == '__main__':

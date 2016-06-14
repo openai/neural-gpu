@@ -111,6 +111,7 @@ class MixedCurriculum(Curriculum):
   def consider_extending(self, result):
     pass
 
+
 class NeuralGPUResult(object):
   grad_norm = None
   back_update = None
@@ -137,6 +138,27 @@ class NeuralGPUResult(object):
     err, tot, seq_err = self.accuracy()
     return '<NeuralGPUResult: length=%s loss=%s bs=%s err=%s seq_err=%s>' % \
       (self.length, self.loss, self.input.shape[1], err, seq_err)
+
+  def attention_by_layer(self):
+    return self.attention.mean(axis=-1).round(3)
+
+  def plot_attention(self, figname):
+    import pylab
+    for i in range(self.attention.shape[2]):
+      for j in range(self.attention.shape[1]):
+        pylab.plot(self.attention[:,j,i], color='rbgkyo'[j], alpha=0.2)
+    pylab.savefig(figname)
+
+def plot_many_examples(sess, model, max_length, generator, batch_size,
+                       dirpat):
+  examples = [(l, generator.get_batch(l, batch_size)) for l in range(3, max_length+1)
+              if generator.is_valid_length(l)]
+  for l, example in examples:
+    print l
+    result = model.step(sess, example, False)
+    result.attention = np.array(result.attention) #XXX kill soon
+    result.plot_attention(dirpat % l)
+
 
 class ResultsRecord(object):
   def __init__(self, batch_size):
