@@ -54,13 +54,53 @@ class NeuralConfig(object):
             self.curriculum_bound, self.nmaps, self.dropout, self.max_grad_norm, msg2))
     return msg3
 
-class DefaultCurriculum(object):
-  def __init__(self, generators, model_config):
-    self.generators = generators
-    self.model_config = model_config
-
+class Curriculum(object):
+  def __init__(self, model_config):
     self.min_length = model_config.min_length
     self.max_length = model_config.max_length
+    self.model_config = model_config
+
+  def is_valid_length(self, l):
+    """Is this a valid length to pass in?"""
+    return True
+
+  def draw_length(self, cur_length):
+    l = None
+    while l is None:
+      # Select the length for curriculum learning.
+      l = np.random.randint(self.min_length, self.max_cur_length + 1)
+      if np.random.randint(100) < 60: # Prefer longer stuff 60% of time.
+        l = max(l, np.random.randint(self.min_length, cur_length + 1))
+      # Mixed curriculum learning: in 25% of cases go to an even larger length.
+      if np.random.randint(100) < 25:
+        l = max(l, np.random.randint(self.min_length, self.max_length + 1))
+
+      if not self.is_valid_length(l):
+        l = None
+
+    return l
+
+  def tasks(self, generators):
+    """List of task names"""
+    pass
+
+  def test_examples(self, batch_size, task_name):
+    """Return a bunch of test examples"""
+    pass
+
+  def draw_example(self, batch_size, l=None):
+    """Draw a random example"""
+    pass
+
+  def consider_extending(self, results):
+    """Interpret the results"""
+    pass
+
+class DefaultCurriculum(Curriculum):
+  def __init__(self, generators, model_config):
+    super(MixedCurriculum, self).__init__(model_config)
+    self.generators = generators
+
     self.max_cur_length = min(self.min_length + 3, self.max_length)
 
     self.prev_acc_perp = None
@@ -85,18 +125,8 @@ class DefaultCurriculum(object):
   def draw_example(self, batch_size, l=None):
     generator = random.choice(self.generators)
 
-    while l is None:
-      # Select the length for curriculum learning.
-      l = np.random.randint(self.min_length, self.max_cur_length + 1)
-      if np.random.randint(100) < 60: # Prefer longer stuff 60% of time.
-        l = max(l, np.random.randint(self.min_length, self.max_cur_length + 1))
-      # Mixed curriculum learning: in 25% of cases go to an even larger length.
-      if np.random.randint(100) < 25:
-        l = max(l, np.random.randint(self.min_length, self.max_length + 1))
-
-      if not self.is_valid_length(l):
-        l = None
-
+    if l is None:
+      l = self.draw_length(self.max_cur_length)
     result = generator.get_batch(l, batch_size)
     return (result, l)
 
@@ -108,6 +138,11 @@ class DefaultCurriculum(object):
       while not self.is_valid_length(self.max_cur_length) and self.max_cur_length < self.max_length:
         self.max_cur_length += 1
 
+class MixedCurriculum(Curriculum):
+  def __init__(self, generators, model_config):
+    super(MixedCurriculum, self).__init__(generators, model_config)
+    self.generators = generators
+    
 
 def conv_linear(args, kw, kh, nin, nout, do_bias, bias_start, prefix):
   """Convolutional linear map."""

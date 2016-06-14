@@ -117,6 +117,7 @@ def load_model(sess, checkpoint_dir):
     options = yaml.load(f)
   for key in options:
     FLAGS.__flags[key] = options[key]
+  data.forward_max = max(FLAGS.forward_max, data.bins[-1])
   config = neural_gpu.NeuralConfig(FLAGS)
   model = neural_gpu.NeuralGPU(config)
   ckpt = tf.train.get_checkpoint_state(checkpoint_dir)

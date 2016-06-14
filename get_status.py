@@ -1,7 +1,10 @@
 from __future__ import print_function
-import yaml
 import glob
 import subprocess
+import collections
+import sys
+
+import yaml
 import numpy as np
 
 import click
@@ -24,11 +27,19 @@ def load_log(fname):
         return lines[-1].strip()
     else:
         data = step_lines[-1].split()
-        return dict(zip(data[::2], data[1::2]))
+        return collections.OrderedDict(zip(data[::2], data[1::2]))
 
 def locked_on_server(server):
     cmd = 'python models/neural_gpu/used_gpus.py'
-    output = subprocess.check_output(['ssh', server, cmd])
+    if sys.version_info.major == 3:
+        try:
+            output = subprocess.check_output(['ssh', server, cmd], timeout=5)
+            output = output.decode()
+        except subprocess.TimeoutExpired:
+            print('ERROR! %s dead.' % server)
+            return []
+    else:
+        output = subprocess.check_output(['ssh', server, cmd], timeout=5)
     return output.split()
 
 class Results(object):
@@ -50,9 +61,14 @@ class Results(object):
 
     @property
     def status(self):
-        if any(isinstance(res, dict) for res in self.results):
-            return dict(accuracy=self.accuracy,
-                        step = self.step)
+        vals = [res for res in self.results if isinstance(res, dict)]
+        if vals:
+            answer = collections.OrderedDict()
+            for key in vals[0]:
+                answer[key] = np.median([float(v[key]) for v in vals])
+            formatting = dict(step='%d', len='%d')
+            return ' '.join('%s %s' % (key,
+                                       formatting.get(key, '%0.3g') % v) for key, v in answer.items())
         else:
             if not self.results:
                 return 'No output found!'
@@ -82,6 +98,9 @@ class Results(object):
             keys = keys.union(self.metadata.keys())
         for key in keys:
             to_print[key] = getattr(self, key)
+        for key in 'dead'.split():
+            if key in to_print and not to_print[key]:
+                del to_print[key]
         print(yaml.safe_dump(to_print))
 
 @click.command()
