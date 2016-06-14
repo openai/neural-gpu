@@ -4,6 +4,7 @@ import glob
 import subprocess
 import collections
 import sys
+import threading
 
 import yaml
 import numpy as np
@@ -14,9 +15,12 @@ def get_fnames():
     return glob.glob('servers/*')
 
 def get_states():
-    for fname in get_fnames():
+    for fname in sorted(get_fnames()):
         with open(fname) as f:
-            yield yaml.load(f)
+            state = yaml.load(f)
+            if not isinstance(state, dict) or 'state' not in state:
+                continue # legacy formats
+            yield state
 
 def load_log(fname):
     try:
@@ -49,10 +53,14 @@ class Results(object):
         self.metadata = metadata
 
     def _parse_logs(self):
+        if hasattr(self, 'results'):
+            return
         dirs = glob.glob('logs/%s/*' % self.label)
         self.results = [load_log('%s/log0' % dir) for dir in dirs]
 
     def _running_programs(self):
+        if hasattr(self, 'dead'):
+            return
         self.dead = {}
         for server in self.locations:
             still_running = locked_on_server(server)
@@ -104,15 +112,31 @@ class Results(object):
                 del to_print[key]
         print(yaml.safe_dump(to_print))
 
+
+class RunFunc(threading.Thread):
+    def __init__(self, f):
+        threading.Thread.__init__(self)
+        self.f = f
+
+    def run(self):
+        self.f()
+
 @click.command()
 @click.option('--verbosity', '-v', default=1)
 def get_status(verbosity):
-    for state in get_states():
-        if not isinstance(state, dict) or 'state' not in state:
-            continue # legacy formats
-        if state['state'] == 'alive':
-            results = Results(state)
-            results.print_out(verbosity)
+    results = [Results(state) for state in get_states()
+               if state['state'] == 'alive']
+    if verbosity >= 1:
+        threads = []
+        for result in results:
+            threads.append(RunFunc(result._parse_logs))
+            threads.append(RunFunc(result._running_programs))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    for result in results:
+        result.print_out(verbosity)
 
 if __name__ == '__main__':
     get_status()

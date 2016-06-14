@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import fileinput
 
 import sys
@@ -48,7 +49,7 @@ def getscores_for_fileset(filenames):
         return data
     data.values[0] = 1
     print data
-    #data = data.interpolate()
+    data = data.interpolate(method='nearest')
     return data
 
 def get_name(fname):

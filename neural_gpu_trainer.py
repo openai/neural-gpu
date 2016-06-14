@@ -72,6 +72,8 @@ def define_flags():
 
   tf.app.flags.DEFINE_bool("do_attention", False, "Whether to use attention method.")
 
+  tf.app.flags.DEFINE_bool("do_lastout", False, "Whether to use last output.")
+
 FLAGS = tf.app.flags.FLAGS
 if not FLAGS.__parsed: # Hack so reload() works
   define_flags()
