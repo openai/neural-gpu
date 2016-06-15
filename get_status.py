@@ -74,7 +74,10 @@ class Results(object):
         if vals:
             answer = collections.OrderedDict()
             for key in vals[0]:
-                answer[key] = np.median([float(v[key]) for v in vals])
+                table = [list(map(float, v[key].split('/'))) for v in vals]
+                min_length = min(map(len, table))
+                table = [row[:min_length] for row in table]
+                answer[key] = np.median(table, axis=0)
             formatting = dict(step='%d', len='%d')
             return ' '.join('%s %s' % (key,
                                        formatting.get(key, '%0.3g') % v) for key, v in answer.items())
