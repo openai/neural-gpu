@@ -34,6 +34,8 @@ class NeuralConfig(object):
 class Curriculum(object):
   def __init__(self, generators, model_config):
     self.generators = generators
+    for i, g in enumerate(generators):
+      g.taskid = i
 
     self.min_length = model_config.min_length
     self.max_length = model_config.max_length
@@ -43,7 +45,7 @@ class Curriculum(object):
     l = None
     while l is None:
       # Select the length for curriculum learning.
-      l = np.random.randint(self.min_length, self.max_cur_length + 1)
+      l = np.random.randint(self.min_length, cur_length + 1)
       if np.random.randint(100) < 60: # Prefer longer stuff 60% of time.
         l = max(l, np.random.randint(self.min_length, cur_length + 1))
       # Mixed curriculum learning: in 25% of cases go to an even larger length.
@@ -53,7 +55,8 @@ class Curriculum(object):
       if not generator.is_valid_length(l):
         l = None
 
-    return l
+    within_bounds = (l <= cur_length)
+    return l, within_bounds
 
   def test_examples(self, batch_size, task_name=None):
     generator = [g for g in self.generators if g.name == task_name][0]
@@ -67,8 +70,10 @@ class Curriculum(object):
       generator = self.draw_generator()
     if l is None:
       cur_length = self.get_cur_length(generator)
-      l = self.draw_length(cur_length, generator)
-    return (generator.get_batch(l, batch_size), l)
+      l, within_bounds = self.draw_length(cur_length, generator)
+    else:
+      within_bounds = True # XXX not clearly correct, but doesn't really matter
+    return (generator.get_batch(l, batch_size), within_bounds)
 
   def tasks(self):
     """List of task names"""
@@ -84,32 +89,34 @@ class Curriculum(object):
   def get_cur_length(self, generator):
     pass
 
-class DefaultCurriculum(Curriculum):
-  def __init__(self, generators, model_config):
-    super(DefaultCurriculum, self).__init__(generators, model_config)
-
-    self.max_cur_length = min(self.min_length + 3, self.max_length)
-
-  def get_cur_length(self, generator):
-    return self.max_cur_length
-
-  def consider_extending(self, result):
-    if result.avg_seq_err > self.model_config.curriculum_bound:
-      return False
-    if self.max_cur_length < self.max_length:
-      self.max_cur_length += 1
-      while not self.generators[0].is_valid_length(self.max_cur_length) and self.max_cur_length < self.max_length:
-        self.max_cur_length += 1
-
 class MixedCurriculum(Curriculum):
   def __init__(self, generators, model_config):
     super(MixedCurriculum, self).__init__(generators, model_config)
 
-  def get_cur_length(self, generator):
-    pass
+    self.max_cur_lengths = {g.taskid: min(self.min_length+3, self.max_length)
+                            for g in generators}
 
-  def consider_extending(self, result):
-    pass
+  def get_cur_length(self, generator):
+    return self.max_cur_lengths[generator.taskid]
+
+  def consider_extending(self, record):
+    ans = False
+    for t in record.record_for_task:
+      ans = max(ans, self.consider_extending_for_task(record.record_for_task[t], t))
+
+  def consider_extending_for_task(self, record, taskid):
+    if record.avg_seq_err > self.model_config.curriculum_bound:
+      return 0
+    if self.max_cur_lengths[taskid] < self.max_length:
+      self.max_cur_lengths[taskid] += 1
+      while not self.generators[0].is_valid_length(self.max_cur_lengths[taskid]) and self.max_cur_lengths[taskid] < self.max_length:
+        self.max_cur_lengths[taskid] += 1
+      return 2
+    return 1
+
+  @property
+  def length_str(self):
+    return '/'.join(str(v) for k, v in sorted(self.max_cur_lengths.items()))
 
 
 class NeuralGPUResult(object):
@@ -159,8 +166,30 @@ def plot_many_examples(sess, model, max_length, generator, batch_size,
     result.attention = np.array(result.attention) #XXX kill soon
     result.plot_attention(dirpat % l)
 
-
 class ResultsRecord(object):
+  def __init__(self, batch_size):
+    self.batch_size = batch_size
+    self.record_for_task = {}
+
+  def feed(self, results, step_time, below_curriculum):
+    taskid = results.taskid[0]
+    assert(not(np.any(results.taskid != taskid)))
+    if taskid not in self.record_for_task:
+      self.record_for_task[taskid] = ResultsRecordPerTask(self.batch_size)
+    self.record_for_task[taskid].feed(results, step_time, below_curriculum)
+
+  def __str__(self):
+    def fmt_attr(name, fmt, label, scale=1):
+      return label + ' '  + '/'.join(fmt % (getattr(v, name)*scale)
+                                     for v in self.record_for_task.values())
+    return ' '.join([fmt_attr('avg_ppx', '%.8f', 'ppx'),
+                     fmt_attr('avg_grad_norm', '%.8f', 'grad-norm'),
+                     fmt_attr('avg_step_time', '%s', 'step-time'),
+                     fmt_attr('avg_err', '%.2f', 'errors', 100), 
+                     fmt_attr('avg_seq_err', '%.2f', 'seq-errors', 100),
+                     ])
+
+class ResultsRecordPerTask(object):
   def __init__(self, batch_size):
     self.batch_size = batch_size
 
@@ -198,6 +227,10 @@ class ResultsRecord(object):
   @property
   def avg_loss(self):
     return self.loss / self.num_below
+
+  @property
+  def avg_ppx(self):
+    return data_utils.safe_exp(self.loss / self.num_below)
 
   @property
   def avg_err(self):

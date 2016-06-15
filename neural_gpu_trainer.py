@@ -203,7 +203,7 @@ def initialize(sess, checkpoint_dir=None):
                    % ckpt.model_checkpoint_path)
     model.saver.restore(sess, ckpt.model_checkpoint_path)
 
-  curriculum = neural_curriculum.DefaultCurriculum(data_generators, model.config)
+  curriculum = neural_curriculum.MixedCurriculum(data_generators, model.config)
   model.curriculum = curriculum
 
   # Return the model and needed variables.
@@ -267,28 +267,26 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
   for _ in xrange(nsteps):
     global_step += 1
 
-    batch, l = model.curriculum.draw_example(batch_size)
+    batch, within_bounds = model.curriculum.draw_example(batch_size)
 
     # Run a step and time it.
     start_time = time.time()
     result = model.step(sess, batch, True)
 
     # Accumulate statistics only if we did not exceed curriculum length.
-    results_record.feed(result, time.time() - start_time,
-                        l <= curriculum.max_cur_length)
+    results_record.feed(result, time.time() - start_time, within_bounds)
 
   # Normalize and print out accumulated statistics.
-  message = ('step %s step-time %s ' % (global_step, results_record.avg_step_time) +
+  message = ('step %s ' % (global_step, ) +
              'lr %.8f pull %.3f ' % (model.lr, model.pull) +
-             'grad-norm %.8f ' % results_record.avg_grad_norm +
-             'len %d ppx %.8f ' % (curriculum.max_cur_length,
-                                   data.safe_exp(results_record.avg_loss)) +
-             'errors %.2f sequence-errors %.2f' % (100*results_record.avg_err,
-                                                   100*results_record.avg_seq_err))
+             'len %s ' % curriculum.length_str +
+             '%s' % str(results_record)
+  )
   data.print_out(message)
 
-  decent = (results_record.avg_seq_err < model.config.curriculum_bound)
-  extended = curriculum.consider_extending(results_record)
+  would_extend = curriculum.consider_extending(results_record)
+  decent = (would_extend >= 1)
+  extended = (would_extend >= 2)
   # If errors are below the curriculum threshold, move curriculum forward.
   if decent:
     if FLAGS.quantize:
@@ -305,7 +303,8 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
         model.lr *= 0.98
 
   # Lower learning rate if we're worse than the last 3 checkpoints.
-  acc_perp = data.safe_exp(results_record.avg_loss)
+  # XXX improve this in a mixed setting
+  acc_perp = data.safe_exp(results_record.record_for_task[0].avg_loss)
   if acc_perp > thresh:
     data.print_out("Lower learning rate: %s %s" % (acc_perp, thresh))
     model.lr *= 0.98

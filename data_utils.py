@@ -89,6 +89,7 @@ generators = {}
 class DataGenerator(object):
   nclass = 33
   name = '<unknown task>'
+  taskid = 0
 
   def is_valid_length(self, l):
     return True
@@ -107,11 +108,13 @@ class DataGenerator(object):
     result = np.array([self.rand_pair_padded(length)
                        for _ in xrange(batch_size)])
     inp, outp = result.transpose([1,2,0])
-    return inp, outp, [0] * batch_size
+    return inp, outp, np.array([self.taskid] * batch_size)
 
   def _initialize(self, nclass):
     self.nclass = nclass
 
+  def __repr__(self):
+    return "<%s name='%s' taskid=%s>" % (self.__class__.__name__, self.name, self.taskid)
 
 class OpGenerator(DataGenerator):
   def __init__(self, base, f, sep):
