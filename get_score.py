@@ -19,10 +19,13 @@ parser.add_argument("--smoothing", type=int, default='1')
 parser.add_argument('files', type=str, nargs='+',
                     help='Log files to examine')
 
-def get_simple_scores(fname, index=0):
+def get_simple_scores(fname, taskname=None):
     with open(fname) as f:
         for line in f:
-            loc, val = line.split()
+            words = line.split()
+            loc, val = words[:2]
+            if taskname and len(words) > 2 and taskname != words[2]:
+                continue
             try:
                 yield (int(loc), float(val))
             except ValueError:
@@ -51,14 +54,14 @@ def create_results(dirname):
         return True
     return False
 
-def getscores_for_dir(dirname, key=None, index=0):
+def getscores_for_dir(dirname, key=None, task=(0,None)):
     if key is None:
         if not os.path.exists(dirname+'/results'):
             if not create_results(dirname):
                 return
-        scores = np.array(list(get_simple_scores(dirname+'/results', index)))
+        scores = np.array(list(get_simple_scores(dirname+'/results', task[1])))
     else:
-        scores = np.array(list(get_scores_for_key(dirname+'/log0', key, index)))
+        scores = np.array(list(get_scores_for_key(dirname+'/log0', key, task[0])))
     if not scores.size:
         return None
     locs, vals = scores.T
@@ -66,13 +69,14 @@ def getscores_for_dir(dirname, key=None, index=0):
     return df
 
 
-def getscores_for_fileset(filenames, key=None, index=0):
+def getscores_for_fileset(filenames, key=None, task=(0,None)):
     all_series = []
     for dirname in filenames:
-        df = getscores_for_dir(dirname, key, index)
+        df = getscores_for_dir(dirname, key, task)
         if df is None:
             continue
         all_series.append(df)
+    all_series = [a.groupby(level=0).first() for a in all_series] # XXX legacy hack
     data = pd.DataFrame(all_series).T
     if len(data) < 2:
         return data
@@ -156,7 +160,7 @@ def plot_all(func, files, key=None, taskset=None):
         for i, task in enumerate(tasks):
             if task not in taskset:
                 continue
-            scores = getscores_for_fileset(d[k], key, i)
+            scores = getscores_for_fileset(d[k], key, (i, task))
             if not len(scores):
                 continue
             if all('do_lastout=True-' in kk for kk in d):

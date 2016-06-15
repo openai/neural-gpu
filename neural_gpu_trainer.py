@@ -214,7 +214,7 @@ def single_test(l, model, sess, task, nprint, batch_size, print_out=True,
                 offset=None, get_steps=False, batch=None):
   """Test model on test data of length l using the given session."""
   if batch is None:
-    batch, _ = model.curriculum.draw_example(batch_size, l)
+    batch, _ = model.curriculum.draw_example(batch_size, l, task)
   result = model.step(sess, batch, False, get_steps=get_steps)
   errors, total, seq_err = result.accuracy(nprint)
   seq_err = float(seq_err) / batch_size
@@ -323,8 +323,8 @@ def run_evaluation(sess, model, batch_size):
     if seq_err < 0.05:  # Run larger test if we're good enough.
       _, seq_err = multi_test(data.forward_max, model, sess, task,
                               FLAGS.nprint, batch_size * 4)
-      data.print_out("LARGE ERROR: %s %s"  % (global_step, seq_err))
-      log_output.write('%s %s\n' % (global_step, seq_err))
+      data.print_out("LARGE ERROR: %s %s %s"  % (global_step, seq_err, task))
+      log_output.write('%s %s %s\n' % (global_step, seq_err, task))
   if seq_err < 0.01:  # Super-large test on 1-task large-forward models.
     if data.forward_max > 4000 and len(tasks) == 1:
       multi_test(data.forward_max, model, sess, task, FLAGS.nprint,

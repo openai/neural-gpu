@@ -281,7 +281,7 @@ class NeuralGPUAtSize(object):
     self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
 
     self.steps = [tf.reshape(s, [-1, self.length, height * nmaps]) for s in step]
-    if FLAGS.do_lastout:
+    if True:
       # Final convolution to get logits, list outputs.
       outputs = [] # depth x batch_size x length x noclass
       with tf.variable_scope("output") as vs:
@@ -292,32 +292,10 @@ class NeuralGPUAtSize(object):
           outputs.append(layer_output)
           vs.reuse_variables()
 
-      if False:
-        # External outputs is length x batch_size x noclass
-        # to match target
-        external_outputs = [tf.transpose(softmax(tf.reshape(o, [-1, self.length, noclass])),
-                                         [1,0,2]) for o in outputs]
-        # external_output = [tf.nn.softmax(o) for o in external_output]
-        # external_output[1] == character 1 for all batches
-        #tf.transpose(tf.nn.softmax(tf.reshape(output, [-1, noclass])), [1,0,2])
-        self.layer_outputs = external_outputs
-        output = outputs[-1]
-        self.output = external_outputs[-1]
-      elif True:
-        outputs = tf.pack(outputs) # depth x batch_size x length x noclass
-        output = tf.reduce_sum(outputs * tf.pack(scales), 0)
-        self.layer_outputs = softmax(outputs)
-        self.output = softmax(tf.transpose(output, [1,0,2])) # length x batch_size x noclass
-      else:
-        self.layer_outputs = [softmax(o) for o in outputs]
-        # if we really end up using this, can redefine scales earlier
-        output = tf.add_n([o * s for o, s in zip(outputs, scales)])
-        # output: batch_size x length x noclass
-        # external_output: List[batch_size x noclass]
-        external_output = [tf.reshape(o, [-1, noclass])
-                           for o in tf.split(1, self.length, output)]
-        external_output = [tf.nn.softmax(o) for o in external_output]
-        self.output = external_output
+      outputs = tf.pack(outputs) # depth x batch_size x length x noclass
+      output = tf.reduce_sum(outputs * tf.pack(scales), 0)
+      self.layer_outputs = softmax(outputs)
+      self.output = softmax(tf.transpose(output, [1,0,2])) # length x batch_size x noclass
     else:
       self.layer_outputs = []
 
@@ -446,3 +424,18 @@ class NeuralGPU(object):
     res = sess.run(feed_out, feed_in)
     return neural_curriculum.NeuralGPUResult(res, inp, target, taskid)
 
+  def simple_step(self, sess, a):
+    """Run a simple operation on one input.
+
+    Reverses the order for you, so you can input in little endian.
+    """
+    if isinstance(a, basestring):
+      a = [data_utils.to_id(c) for c in a]
+    else:
+      a = list(a)
+    l = self.get_instance_for_length(len(a)).length
+    pad = l - len(a)
+    input = np.array([a[::-1] + [0]*pad]).T
+    result = self.step(sess, (input, input, [0]), False)
+    relevant_output = result.output.argmax(axis=-1).T[0, :(-pad if pad else None)]
+    return ''.join(map(data_utils.to_symbol, relevant_output[::-1]))

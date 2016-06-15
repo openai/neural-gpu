@@ -58,16 +58,18 @@ class Curriculum(object):
     within_bounds = (l <= cur_length)
     return l, within_bounds
 
-  def test_examples(self, batch_size, task_name=None):
-    generator = [g for g in self.generators if g.name == task_name][0]
+  def get_generator_for_task(self, task):
+    return [g for g in self.generators if g.name == task][0]
+
+  def test_examples(self, batch_size, task):
+    generator = self.get_generator_for_task(task)
     for l in np.arange(self.min_length, self.max_length + 1):
       if generator.is_valid_length(l):
         yield (generator.get_batch(l, batch_size), l)
 
-  def draw_example(self, batch_size, l=None, generator=None):
+  def draw_example(self, batch_size, l=None, task=None):
     """Draw a random example"""
-    if generator is None:
-      generator = self.draw_generator()
+    generator = self.draw_generator(task)
     if l is None:
       cur_length = self.get_cur_length(generator)
       l, within_bounds = self.draw_length(cur_length, generator)
@@ -83,8 +85,10 @@ class Curriculum(object):
     """Interpret the results"""
     pass
 
-  def draw_generator(self):
-    return np.random.choice(self.generators)
+  def draw_generator(self, task=None):
+    options = (self.generators if task is None else
+               [g for g in self.generators if g.name == task])
+    return np.random.choice(options)
 
   def get_cur_length(self, generator):
     pass
