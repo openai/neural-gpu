@@ -252,7 +252,8 @@ class NeuralGPUAtSize(object):
           logits = tf.reduce_sum(keys * cur_att, [-1,-2,-3]) # shape: k x bs
           attention_probs = tf.transpose(softmax(tf.transpose(logits))) # shape: k x bs
           attention_probs_list.append(attention_probs)
-          cur = tf.reduce_sum(attention_probs * vals, 0) # bs x length x height x nmaps
+          cur = tf.reduce_sum(expand_dims_by_k(attention_probs, 3) * vals, 0)
+          # bs x length x height x nmaps
 
           # parts = tf.unpack(result)
           # cur_att = parts[0]
