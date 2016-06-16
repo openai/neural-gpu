@@ -18,6 +18,7 @@ import math
 import random
 import sys
 import time
+import operator
 
 import numpy as np
 import tensorflow as tf
@@ -70,6 +71,7 @@ def add(n1, n2, base=10):
   return [0]
 
 def to_base(num, b, l=1):
+  assert num >= 0
   ans = []
   while num:
     ans.append(num%b)
@@ -136,12 +138,12 @@ class OpGenerator(DataGenerator):
     outp = to_base(result, self.base, 2*k+1) + 1
     return inp, outp
 
-generators.update(dict(add=OpGenerator(10, np.add, 11),
-                       badd=OpGenerator(2, np.add, 11),
-                       qadd=OpGenerator(4, np.add, 11),
-                       mul=OpGenerator(10, np.multiply, 12),
-                       bmul=OpGenerator(2, np.multiply, 12),
-                       qmul=OpGenerator(4, np.multiply, 12)))
+generators.update(dict(add=OpGenerator(10, operator.add, 11),
+                       badd=OpGenerator(2, operator.add, 11),
+                       qadd=OpGenerator(4, operator.add, 11),
+                       mul=OpGenerator(10, operator.mul, 12),
+                       bmul=OpGenerator(2, operator.mul, 12),
+                       qmul=OpGenerator(4, operator.mul, 12)))
 
 class FGenerator(DataGenerator):
   def __init__(self, f):
