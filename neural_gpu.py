@@ -17,6 +17,7 @@
 import time
 
 import tensorflow as tf
+import mytf
 
 import data_utils
 import random
@@ -45,7 +46,6 @@ def sigmoid_cutoff(x, cutoff):
   glo, ghi = (-dd, 1+dd) if FLAGS.smooth_grad else (None, None)
   return tf_cut_function(z, 0, 1, glo, ghi)
 
-
 def tanh_cutoff(x, cutoff):
   """Tanh with cutoff, e.g., 1.1tanh(x) cut to [-1. 1]."""
   y = tf.tanh(x)
@@ -55,11 +55,12 @@ def tanh_cutoff(x, cutoff):
   glo, ghi = (-tcut, tcut) if tcut else (None, None)
   return tf_cut_function(z, -1, 1, glo, ghi)
 
+
 def conv_linear(arg, kw, kh, nin, nout, do_bias, bias_start, prefix):
   """Convolutional linear map."""
   with tf.variable_scope(prefix):
     k = tf.get_variable("CvK", [kw, kh, nin, nout])
-    res = conv2d(arg, k, [1, 1, 1, 1], "SAME")
+    res = mytf.conv2d(arg, k, [1, 1, 1, 1], "SAME")
     if not do_bias: return res
     bias_term = tf.get_variable("CvB", [nout],
                                 initializer=tf.constant_initializer(0.0))
@@ -81,28 +82,6 @@ def gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, suffix):
     cur = conv_gru(cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix))
     cur *= mask
   return cur
-
-try:
-  @tf.RegisterGradient("CustomIdG")
-  def _custom_id_grad(_, grads):
-    return grads
-except KeyError as e: # Happens on reload
-  pass
-
-def quantize(t, quant_scale, max_value=1.0):
-  """Quantize a tensor t with each element in [-max_value, max_value]."""
-  t = tf.minimum(max_value, tf.maximum(t, -max_value))
-  big = quant_scale * (t + max_value) + 0.5
-  with tf.get_default_graph().gradient_override_map({"Floor": "CustomIdG"}):
-    res = (tf.floor(big) / quant_scale) - max_value
-  return res
-
-
-def quantize_weights_op(quant_scale, max_value):
-  ops = [v.assign(quantize(v, quant_scale, float(max_value)))
-         for v in tf.trainable_variables()]
-  return tf.group(*ops)
-
 
 def relaxed_average(var_name_suffix, rx_step):
   """Calculate the average of relaxed variables having var_name_suffix."""
@@ -145,49 +124,39 @@ def make_dense(targets, noclass):
     dense = tf.sparse_to_dense(indices, length, 1.0, 0.0)
   return tf.reshape(dense, [-1, noclass])
 
-def tf_shape(tensor):
-  """Return the tensor shape in a form tf.reshape understands."""
-  return [x or -1 for x in tensor.get_shape().as_list()]
 
-from functools import wraps
 
-def fix_batching(f, k, nargs=1):
-  """Make a given function f support extra initial dimensions.
+def batch_norm(x, n_out, phase_train, scope='bn'):
+    """
+    Batch normalization on convolutional maps.
+    Args:
+        x:           Tensor, 4D BHWD input maps
+        n_out:       integer, depth of input maps
+        phase_train: boolean tf.Varialbe, true indicates training phase
+        scope:       string, variable scope
+    Return:
+        normed:      batch-normalized maps
+    """
+    with tf.variable_scope(scope):
+        beta = tf.Variable(tf.constant(0.0, shape=[n_out]),
+                                     name='beta', trainable=True)
+        gamma = tf.Variable(tf.constant(1.0, shape=[n_out]),
+                                      name='gamma', trainable=True)
+        batch_mean, batch_var = tf.nn.moments(x, [0,1,2], name='moments')
+        ema = tf.train.ExponentialMovingAverage(decay=0.5)
 
-  A number of tf.nn operations expect shapes of the form [-1] + lst
-  where len(lst) is a fixed constant, and operate independently on the
-  -1.  This lets them work on shapes of the form lst2 + lst, where
-  lst2 is arbitrary.
+        def mean_var_with_update():
+            ema_apply_op = ema.apply([batch_mean, batch_var])
+            with tf.control_dependencies([ema_apply_op]):
+                return tf.identity(batch_mean), tf.identity(batch_var)
 
-  args:
-    k: len(lst) that f wants
-    nargs: Number of tensors with this property
-  """
-  @wraps(f)
-  def wrapper(*args, **kws):
-    arrays = args[:nargs]
-    old_shape = tf_shape(arrays[0])
-    used_shape = old_shape[-k:]
-    inputs_reshaped = tuple(tf.reshape(array, [-1]+used_shape)
-                       for array in arrays)
-    output = f(*(inputs_reshaped + args[nargs:]), **kws)
-    new_prefix = old_shape[:-k]
-    new_suffix = tf_shape(output)[1:]
-    output_reshaped = tf.reshape(output, new_prefix + new_suffix)
-    return output_reshaped
-  return wrapper
+        mean, var = tf.cond(phase_train,
+                            mean_var_with_update,
+                            lambda: (ema.average(batch_mean), ema.average(batch_var)))
+        normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, 1e-3)
+    return normed
 
-softmax = fix_batching(tf.nn.softmax, 1)
-conv2d = fix_batching(tf.nn.conv2d, 3)
-softmax_cross_entropy_with_logits = fix_batching(tf.nn.softmax_cross_entropy_with_logits, 1, 2)
 
-def safe_squeeze(array, i):
-  shape = tf_shape(array)
-  assert shape[i] == 1
-  return tf.reshape(array, shape[:i] + (shape[i+1:] if (i+1) else []))
-
-def expand_dims_by_k(array, k):
-  return tf.reshape(array, tf_shape(array) + [1]*k)
 
 class NeuralGPUAtSize(object):
   """Instantiate the NeuralGPU at a given block size."""
@@ -213,7 +182,7 @@ class NeuralGPUAtSize(object):
     # bmask: batch_size x length
     bmask = (self.input > 0) | (self.target > 0)
     # mask: batch x length x 1 x 1
-    mask = tf.to_float(expand_dims_by_k(bmask, 2))
+    mask = tf.to_float(mytf.expand_dims_by_k(bmask, 2))
 
     # padded_mask: batch x (length+1) x 1 x 1
     padded_mask = tf.concat(1, [mask, tf.zeros_like(mask[:,:1,:,:])])
@@ -249,9 +218,9 @@ class NeuralGPUAtSize(object):
           vals = result[k:2*k,:,:,:,:]
           cur_att = result[2*k,:,:,:,:]
           logits = tf.reduce_sum(keys * cur_att, [-1,-2,-3]) # shape: k x bs
-          attention_probs = tf.transpose(softmax(tf.transpose(logits))) # shape: k x bs
+          attention_probs = tf.transpose(mytf.softmax(tf.transpose(logits))) # shape: k x bs
           attention_probs_list.append(attention_probs)
-          cur = tf.reduce_sum(expand_dims_by_k(attention_probs, 3) * vals, 0)
+          cur = tf.reduce_sum(mytf.expand_dims_by_k(attention_probs, 3) * vals, 0)
           # bs x length x height x nmaps
 
           # parts = tf.unpack(result)
@@ -312,14 +281,14 @@ class NeuralGPUAtSize(object):
 
     # Final convolution to get logits, list outputs.
     layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "output")
-    outputs = safe_squeeze(layer_output, -2) # depth x batch x length x noclass
+    outputs = mytf.safe_squeeze(layer_output, -2) # depth x batch x length x noclass
     output = tf.reduce_sum(outputs * scales, 0)
-    self.layer_outputs = softmax(outputs)
-    self.output = softmax(output) # batch_size x length x noclass
+    self.layer_outputs = mytf.softmax(outputs)
+    self.output = mytf.softmax(output) # batch_size x length x noclass
 
     # Calculate cross-entropy loss and normalize it.
     targets = tf.one_hot(self.target, noclass)
-    xent = softmax_cross_entropy_with_logits(output, targets) # shape: batch x length
+    xent = mytf.softmax_cross_entropy_with_logits(output, targets) # shape: batch x length
     perp_loss = tf.reduce_mean(xent * tf.reshape(mask, [-1, self.length]))
 
     # Final loss: cross-entropy + shared parameter relaxation part.
@@ -353,7 +322,6 @@ class NeuralGPU(object):
     # Feeds for parameters and ops to update them.
     self.global_step = tf.Variable(0, trainable=False)
     self.lr = float(config.lr)
-    self.quant_op = quantize_weights_op(512, 8)
 
     self.pull = float(config.pull)
     self.do_training = tf.placeholder(tf.float32, name="do_training")
@@ -404,12 +372,11 @@ class NeuralGPU(object):
     """Run a step of the network."""
     inp, target, taskid = batch
     assert inp.shape == target.shape
-    length = target.shape[1]
     feed_in = {}
     feed_in[self.do_training] = 1.0 if do_backward else 0.0
     feed_in[self.task] = taskid
     feed_out = {}
-    instance = self.get_instance_for_length(length)
+    instance = self.get_instance_for_length(target.shape[1])
     feed_in[instance.input] = inp
     feed_in[instance.target] = target
     if do_backward:

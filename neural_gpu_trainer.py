@@ -64,7 +64,6 @@ def define_flags():
   tf.app.flags.DEFINE_integer("nprint", 0, "How many test examples to print out.")
   tf.app.flags.DEFINE_integer("mode", 0, "Mode: 0-train other-decode.")
   tf.app.flags.DEFINE_bool("animate", False, "Whether to produce an animation.")
-  tf.app.flags.DEFINE_bool("quantize", False, "Whether to quantize variables.")
   tf.app.flags.DEFINE_float("smooth_grad", 0.0, "Whether to avoid clipping gradient")
   tf.app.flags.DEFINE_float("smooth_grad_tanh", 0.0, "Whether to avoid clipping tanh gradient")
   tf.app.flags.DEFINE_string("task", "rev", "Which task are we learning?")
@@ -291,10 +290,6 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
   extended = (would_extend >= 2)
   # If errors are below the curriculum threshold, move curriculum forward.
   if decent:
-    if FLAGS.quantize:
-      # Quantize weights.
-      data.print_out("  Quantizing parameters.")
-      sess.run([model.quant_op])
     # Either increase pull or, if it's large, average parameters.
     if model.pull < 0.1:
       model.pull *= model.config.pull_incr
