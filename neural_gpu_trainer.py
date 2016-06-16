@@ -73,6 +73,7 @@ def define_flags():
   tf.app.flags.DEFINE_integer("num_attention", 0, "Number of attention modules to use.")
 
   tf.app.flags.DEFINE_bool("do_batchnorm", False, "Whether to use batch normalization.")
+  tf.app.flags.DEFINE_bool("do_resnet", False, "Whether to use resnets.")
 
   tf.app.flags.DEFINE_bool("do_lastout", False, "Whether to use last output.")
   tf.app.flags.DEFINE_bool("do_layers", False, "Expose output for all layers.")
@@ -353,7 +354,8 @@ def train_loop(sess, model, batch_size, checkpoint_dir):
       timer.done()
 
     # Run evaluation.
-    timer = Timer("running evaluation")
+    global_step, = sess.run( [model.global_step])
+    timer = Timer("running evaluation %s"  % global_step)
     run_evaluation(sess, model, batch_size)
     timer.done()
 

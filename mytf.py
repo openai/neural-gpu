@@ -1,5 +1,6 @@
 """Various improvements to the tensorflow API."""
 import tensorflow as tf
+from tensorflow.python.training import moving_averages
 import functools
 
 def shape_list(tensor):
@@ -49,7 +50,8 @@ softmax_cross_entropy_with_logits = fix_batching(tf.nn.softmax_cross_entropy_wit
 
 
 # From http://stackoverflow.com/questions/33949786/how-could-i-use-batch-normalization-in-tensorflow
-def batch_norm(x, n_out, phase_train, scope='bn'):
+# and https://github.com/ry/tensorflow-resnet/blob/master/resnet.py
+def batch_norm(x, phase_train, scope='bn'):
     """
     Batch normalization on convolutional maps.
     Args:
@@ -60,19 +62,32 @@ def batch_norm(x, n_out, phase_train, scope='bn'):
     Return:
         normed:      batch-normalized maps
     """
+    x_shape = shape_list(x)
+    params_shape = x_shape[-1:]
+    BN_DECAY = 0.8
+    BN_EPSILON = 1e-3
     with tf.variable_scope(scope) as vs:
-        beta = tf.get_variable('beta', initializer=tf.constant(0.0, shape=[n_out]))
-        gamma = tf.get_variable('gamma', initializer=tf.constant(1.0, shape=[n_out]))
-        batch_mean, batch_var = tf.nn.moments(x, [0,1,2], name='moments')
-        ema = tf.train.ExponentialMovingAverage(decay=0.5)
+        beta = tf.get_variable('beta', params_shape, initializer=tf.zeros_initializer)
+        gamma = tf.get_variable('gamma', params_shape, initializer=tf.ones_initializer)
+        moving_mean = tf.get_variable('moving_mean', params_shape,
+                                      initializer=tf.zeros_initializer, trainable=False)
+        moving_var = tf.get_variable('moving_var', params_shape,
+                                     initializer=tf.ones_initializer, trainable=False)
+        axes = range(len(x_shape)-1)
+        batch_mean, batch_var = tf.nn.moments(x, axes, name='moments')
 
+        update_ops = [
+            moving_averages.assign_moving_average(moving_mean, batch_mean, BN_DECAY),
+            moving_averages.assign_moving_average(moving_var, batch_var, BN_DECAY)]
         def mean_var_with_update():
-            ema_apply_op = ema.apply([batch_mean, batch_var])
-            with tf.control_dependencies([ema_apply_op]):
+            with tf.control_dependencies(update_ops):
                 return tf.identity(batch_mean), tf.identity(batch_var)
 
         mean, var = tf.cond(phase_train,
                             mean_var_with_update,
-                            lambda: (ema.average(batch_mean), ema.average(batch_var)))
-        normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, 1e-3)
+                            lambda: (moving_mean, moving_var))
+        normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, BN_EPSILON)
     return normed
+
+
+

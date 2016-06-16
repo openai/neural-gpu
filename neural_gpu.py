@@ -76,12 +76,27 @@ def conv_gru(mem, kw, kh, nmaps, cutoff, prefix):
   gate = sigmoid_cutoff(conv_lin(mem, "g", 1.0), cutoff)
   return gate * mem + (1 - gate) * candidate
 
-def gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, suffix):
+def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, nconvs=2):
+  old = cur
+  for i in xrange(nconvs):
+    cur = conv_linear(cur, kw, kh, nmaps, nmaps, True, 0.0, "cgru_%d_%s" % (i, suffix))
+    if i == nconvs - 1:
+      cur = old + cur
+    cur = tf.nn.relu(cur * mask)
+  return cur
+
+def lstm_block(cur, kw, kh, nmaps, cutoff, mask, suffix, nconvs=2):
   # Do nconvs-many CGRU steps.
   for layer in xrange(nconvs):
     cur = conv_gru(cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix))
     cur *= mask
   return cur
+
+def gru_block(*args):
+  if FLAGS.do_resnet:
+    return resnet_block(*args)
+  else:
+    return lstm_block(*args)
 
 def relaxed_average(var_name_suffix, rx_step):
   """Calculate the average of relaxed variables having var_name_suffix."""
@@ -180,7 +195,7 @@ class NeuralGPUAtSize(object):
         if FLAGS.num_attention:
           k = FLAGS.num_attention
           blocks = tf.pack([cur]*(2*k+1))
-          result = gru_block(nconvs, blocks, kw, kh, nmaps, cutoff, mask, 'grublocks')
+          result = gru_block(blocks, kw, kh, nmaps, cutoff, mask, 'grublocks', nconvs)
           # shape: (2k+1) x bs x length x height x nmaps
           keys = result[:k,:,:,:,:]
           vals = result[k:2*k,:,:,:,:]
@@ -190,10 +205,10 @@ class NeuralGPUAtSize(object):
           attention_probs_list.append(attention_probs)
           cur = tf.reduce_sum(mytf.expand_dims_by_k(attention_probs, 3) * vals, 0)
         else:
-          cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
+          cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup', nconvs)
 
         if FLAGS.do_batchnorm:
-          cur = mytf.batch_norm(cur, nmaps, self.do_training, 'bn')
+          cur = mytf.batch_norm(cur, self.do_training, 'bn')
         layers.append(cur)
 
     self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
