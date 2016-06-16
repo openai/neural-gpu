@@ -152,8 +152,8 @@ def plot_all(func, files, key=None, taskset=None):
         d.setdefault(get_key(f), []).append(f)
 
     longest_cp = os.path.commonprefix(d.keys())
-    print longest_cp
-    if longest_cp[-1] == '=': #prettier
+    print longest_cp, d.keys()
+    if longest_cp and longest_cp[-1] == '=': #prettier
         longest_cp = longest_cp.rsplit('-',1)[0]+'-'
 
     for k in sorted(d):

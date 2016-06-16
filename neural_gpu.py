@@ -151,20 +151,26 @@ def tf_shape(tensor):
 
 from functools import wraps
 
-def fix_batching(f, k):
+def fix_batching(f, k, nargs=1):
   """Make a given function f support extra initial dimensions.
 
   A number of tf.nn operations expect shapes of the form [-1] + lst
   where len(lst) is a fixed constant, and operate independently on the
   -1.  This lets them work on shapes of the form lst2 + lst, where
   lst2 is arbitrary.
+
+  args:
+    k: len(lst) that f wants
+    nargs: Number of tensors with this property
   """
   @wraps(f)
-  def wrapper(array, *args, **kws):
-    old_shape = tf_shape(array)
+  def wrapper(*args, **kws):
+    arrays = args[:nargs]
+    old_shape = tf_shape(arrays[0])
     used_shape = old_shape[-k:]
-    input_reshaped = tf.reshape(array, [-1]+used_shape)
-    output = f(input_reshaped, *args, **kws)
+    inputs_reshaped = tuple(tf.reshape(array, [-1]+used_shape)
+                       for array in arrays)
+    output = f(*(inputs_reshaped + args[nargs:]), **kws)
     new_prefix = old_shape[:-k]
     new_suffix = tf_shape(output)[1:]
     output_reshaped = tf.reshape(output, new_prefix + new_suffix)
@@ -173,6 +179,7 @@ def fix_batching(f, k):
 
 softmax = fix_batching(tf.nn.softmax, 1)
 conv2d = fix_batching(tf.nn.conv2d, 3)
+softmax_cross_entropy_with_logits = fix_batching(tf.nn.softmax_cross_entropy_with_logits, 1, 2)
 
 def safe_squeeze(array, i):
   shape = tf_shape(array)
@@ -308,14 +315,11 @@ class NeuralGPUAtSize(object):
     outputs = safe_squeeze(layer_output, -2) # depth x batch x length x noclass
     output = tf.reduce_sum(outputs * scales, 0)
     self.layer_outputs = softmax(outputs)
-    self.output = softmax(tf.transpose(output, [1,0,2])) # length x batch_size x noclass
+    self.output = softmax(output) # batch_size x length x noclass
 
     # Calculate cross-entropy loss and normalize it.
-    targets = tf.concat(1, [make_dense(self.target[:,l], noclass)
-                            for l in xrange(self.length)])
-    targets = tf.reshape(targets, [-1, noclass])
-    xent = tf.reshape(tf.nn.softmax_cross_entropy_with_logits(
-        tf.reshape(output, [-1, noclass]), targets), [-1, self.length])
+    targets = tf.one_hot(self.target, noclass)
+    xent = softmax_cross_entropy_with_logits(output, targets) # shape: batch x length
     perp_loss = tf.reduce_mean(xent * tf.reshape(mask, [-1, self.length]))
 
     # Final loss: cross-entropy + shared parameter relaxation part.
