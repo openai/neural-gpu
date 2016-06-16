@@ -204,16 +204,16 @@ class NeuralGPUAtSize(object):
     # Mask to 0-out padding space in each step.
     # bmask: length x batch_size
     bmask = [(self.input[:,l] > 0) | (self.target[l] > 0) for l in xrange(self.length)]
-    # mask: length x batch_size x 1
+    # mask: length list of batch_size x 1
     mask = [tf.to_float(tf.expand_dims(m, 1)) for m in bmask]
     # Use a shifted mask for step scaling and concatenated for weights.
-    # shifted_mask: (length + 1) x batch_size x 1
+    # shifted_mask: (length + 1) list of batch_size x 1
     shifted_mask = mask + [tf.zeros_like(mask[0])]
     scales = [shifted_mask[i] * (1 - shifted_mask[i+1]) for i in xrange(self.length)]
     scales = [tf.reshape(s, [-1, 1, 1]) for s in scales]
-    #scales:  length x batch_size x 1 x 1 x 1
+    #scales:  length list of batch_size x 1 x 1 x 1
     mask = tf.concat(1, mask)  # batch x length
-    mask = tf.reshape(mask, [-1, self.length, 1, 1])
+    mask = expand_dims_by_k(mask, 2) # batch x length x 1 x 1
     return mask, scales
 
   def construct_mask_better(self):
@@ -280,14 +280,15 @@ class NeuralGPUAtSize(object):
 
         layers.append(cur)
 
-    return layers, attention_probs_list
+    self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
+    self.layers = tf.pack(layers)
+    return layers
 
   def construct_graph(self, adam):
     nmaps = self.config.nmaps
     vec_size = self.config.nmaps
     noclass = self.config.noclass
     height = self.config.height
-    batch_size = tf.shape(self.input)[0]
 
     # The general tensor shape is
     # batchsize x length x height x nmaps
@@ -308,36 +309,14 @@ class NeuralGPUAtSize(object):
     first = tf.concat(2, [first] + [tf.zeros_like(first)]*(height - 1))
 
     # Computation steps.
-    layers, attention_probs_list = self.construct_all_layers(first, mask)
+    layers = self.construct_all_layers(first, mask)
 
-    self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
-    self.layers = tf.pack(layers)
-
-    if True:
-      # Final convolution to get logits, list outputs.
-      layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "output")
-      outputs = safe_squeeze(layer_output, -2) #remove dimension w/ value -1
-      output = tf.reduce_sum(outputs * tf.pack(scales), 0)
-      self.layer_outputs = softmax(outputs)
-      self.output = softmax(tf.transpose(output, [1,0,2])) # length x batch_size x noclass
-    elif True:
-      output_layer = tf.reduce_sum(self.layers[:,:,:,0,:] * tf.pack(scales), 0)
-      output = conv_linear(tf.expand_dim(output_layer, 2), 1, 1, nmaps, noclass,
-                           True, 0.0, "output")
-      output = safe_squeeze(output, 2)
-      self.output = tf.transpose(softmax(output), [1,0,2])
-    else:
-      self.layer_outputs = []
-
-      scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
-      output = tf.add_n([layers[i][:,:,:1,:] * scales[i] for i in xrange(self.length)])
-      output = conv_linear(output, 1, 1, nmaps, noclass, True, 0.0, "output")
-      output = tf.reshape(output, [-1, self.length, noclass])
-      external_output = [tf.reshape(o, [-1, noclass])
-                         for o in list(tf.split(1, self.length, output))]
-      external_output = [tf.nn.softmax(o) for o in external_output]
-
-      self.output = external_output
+    # Final convolution to get logits, list outputs.
+    layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "output")
+    outputs = safe_squeeze(layer_output, -2) #remove dimension w/ value -1
+    output = tf.reduce_sum(outputs * tf.pack(scales), 0)
+    self.layer_outputs = softmax(outputs)
+    self.output = softmax(tf.transpose(output, [1,0,2])) # length x batch_size x noclass
 
     # Calculate cross-entropy loss and normalize it.
     targets = tf.concat(1, [make_dense(self.target[l], noclass)
@@ -346,9 +325,6 @@ class NeuralGPUAtSize(object):
     xent = tf.reshape(tf.nn.softmax_cross_entropy_with_logits(
         tf.reshape(output, [-1, noclass]), targets), [-1, self.length])
     perp_loss = tf.reduce_mean(xent * tf.reshape(mask, [-1, self.length]))
-    #perp_loss = tf.reduce_sum(xent * tf.reshape(mask, [-1, self.length]))
-    #perp_loss /= tf.cast(batch_size, dtype=tf.float32)
-    #perp_loss /= self.length
 
     # Final loss: cross-entropy + shared parameter relaxation part.
     relax_dist, self.model.avg_op = relaxed_distance(self.config.rx_step)
