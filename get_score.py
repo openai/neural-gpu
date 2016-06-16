@@ -109,7 +109,7 @@ def plot_results(fname, frame):
     x = frame.index
     ysets = list(frame.T.values)
     if args.smoothing > 1:
-        f = lambda y: scipy.signal.savgol_filter(y, args.smoothing, 1)
+        f = lambda y: scipy.signal.savgol_filter(y, args.smoothing, 1) if len(y) > args.smoothing else y
     else:
         f = lambda y: y
     ysets = np.array(map(f, ysets)).T
