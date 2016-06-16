@@ -161,24 +161,23 @@ def fix_batching(f, k):
   """
   @wraps(f)
   def wrapper(array, *args, **kws):
-    old_shape = array.get_shape().as_list()
+    old_shape = tf_shape(array)
     used_shape = old_shape[-k:]
     input_reshaped = tf.reshape(array, [-1]+used_shape)
     output = f(input_reshaped, *args, **kws)
-    new_prefix = [x or -1 for x in old_shape[:-k]]
-    new_suffix = output.get_shape().as_list()[1:]
+    new_prefix = old_shape[:-k]
+    new_suffix = tf_shape(output)[1:]
     output_reshaped = tf.reshape(output, new_prefix + new_suffix)
     return output_reshaped
   return wrapper
 
+def safe_squeeze(array, i):
+  shape = tf_shape(array)
+  assert shape[i] == 1
+  return tf.reshape(array, shape[:i] + (shape[i+1:] if (i+1) else []))
+
 softmax = fix_batching(tf.nn.softmax, 1)
 conv2d = fix_batching(tf.nn.conv2d, 3)
-
-# def softmax(array):
-#   """Perform a softmax along the final axis but preserve shape."""
-#   nclass = array.get_shape()[-1].value
-#   result = tf.nn.softmax(tf.reshape(array, [-1, nclass]))
-#   return tf.reshape(result, tf_shape(array))
 
 def check_nonzero(sparse):
   """In a sparse batch of ints, make 1 if it's > 0 and 0 else."""
@@ -226,14 +225,61 @@ class NeuralGPUAtSize(object):
     mask = tf.expand_dims(tf.expand_dims(bmask, 2), 2)
     return tf.to_float(mask)
 
+  def construct_all_layers(self, first, mask):
+    cutoff = self.config.cutoff
+    kw = self.config.kw
+    kh = self.config.kh
+    nmaps = self.config.nmaps
+    nconvs = self.config.nconvs
+
+    keep_prob = 1.0 - self.do_training * (self.config.dropout * 8.0 / float(self.length))
+    cur = first
+    layers = []
+    attention_probs_list = []
+    for it in xrange(self.length):
+      with tf.variable_scope("RX%d" % (it % self.config.rx_step)) as vs:
+        if it >= self.config.rx_step:
+          vs.reuse_variables()
+        cur = tf.nn.dropout(cur, keep_prob) * mask
+
+        if FLAGS.do_attention:
+          k = 3
+          blocks = tf.pack([cur]*(2*k+1))
+          result = gru_block(nconvs, blocks, kw, kh, nmaps, cutoff, mask, 'grublocks')
+          # shape: (2k+1) x bs x length x height x nmaps
+          parts = tf.unpack(result)
+          cur_att = parts[0]
+          attention_vals = []
+          logit_table = [] # shape: nattention x bs x 1
+          for i in range(3):
+            key = parts[2*i+1]
+            val = parts[2*i+2]
+            if i in [0,1]:
+              # self.task shape: bs
+              val = tf.select(tf.equal(self.task, i), val, tf.stop_gradient(val))
+              key = tf.select(tf.equal(self.task, i), key, tf.stop_gradient(key))
+            logit = tf.reduce_sum(cur_att * key, [1,2,3]) # shape: bs
+            logit_table.append(tf.expand_dims(logit, 1)) 
+            attention_vals.append(tf.expand_dims(val, 0))
+
+          attention_probs = tf.transpose(tf.nn.softmax(tf.concat(1, logit_table)))
+          attention_probs_list.append(attention_probs)
+          attention_vals = tf.concat(0, attention_vals) # shape: 3 x bs x len x h xnmaps
+          expanded_probs = attention_probs # make it 3 x bs x 1 x 1 x 1
+          for i in range(3):
+            expanded_probs = tf.expand_dims(expanded_probs, -1)
+          cur = tf.reduce_sum(expanded_probs * attention_vals, [0])
+        else:
+          cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
+
+        layers.append(cur)
+
+    return layers, attention_probs_list
+
   def construct_graph(self, adam):
     nmaps = self.config.nmaps
     vec_size = self.config.nmaps
     noclass = self.config.noclass
-    cutoff = self.config.cutoff
-    nconvs = self.config.nconvs
-    kw = self.config.kw
-    kh = self.config.kh
     height = self.config.height
     batch_size = tf.shape(self.input)[0]
 
@@ -256,69 +302,29 @@ class NeuralGPUAtSize(object):
     first = tf.concat(2, [first] + [tf.zeros_like(first)]*(height - 1))
 
     # Computation steps.
-    keep_prob = 1.0 - self.do_training * (self.config.dropout * 8.0 / float(self.length))
-    step = [tf.nn.dropout(first, keep_prob) * mask]
-    curs = []
-    attention_probs_list = []
-    for it in xrange(self.length):
-      with tf.variable_scope("RX%d" % (it % self.config.rx_step)) as vs:
-        if it >= self.config.rx_step:
-          vs.reuse_variables()
-        cur = step[it]
-
-        if FLAGS.do_attention:
-          cur_att = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
-           # shape: bs x length x height x nmaps
-          attention_vals = []
-          logit_table = [] # shape: nattention x bs x 1
-          for i in range(3):
-            key = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'key%s' % i)
-            val = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'val%s' % i)
-            if i in [0,1]:
-              # self.task shape: bs
-              val = tf.select(tf.equal(self.task, i), val, tf.stop_gradient(val))
-              key = tf.select(tf.equal(self.task, i), key, tf.stop_gradient(key))
-            logit = tf.reduce_sum(cur_att * key, [1,2,3]) # shape: bs
-            logit_table.append(tf.expand_dims(logit, 1)) 
-            attention_vals.append(tf.expand_dims(val, 0))
-
-          attention_probs = tf.transpose(tf.nn.softmax(tf.concat(1, logit_table)))
-          attention_probs_list.append(attention_probs)
-          attention_vals = tf.concat(0, attention_vals) # shape: 3 x bs x len x h xnmaps
-          expanded_probs = attention_probs # make it 3 x bs x 1 x 1 x 1
-          for i in range(3):
-            expanded_probs = tf.expand_dims(expanded_probs, -1)
-          cur = tf.reduce_sum(expanded_probs * attention_vals, [0])
-        else:
-          cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
-
-        curs.append(cur)
-        cur = tf.nn.dropout(cur, keep_prob)
-        step.append(cur * mask)
+    layers, attention_probs_list = self.construct_all_layers(first, mask)
 
     self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
+    self.layers = tf.pack(layers)
 
-    self.steps = [tf.reshape(s, [-1, self.length, height * nmaps]) for s in step]
     if True:
       # Final convolution to get logits, list outputs.
-      outputs = [] # depth x batch_size x length x noclass
-      with tf.variable_scope("output") as vs:
-        for layer in curs:
-          layer_output = conv_linear(layer[:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "o")
-          # Was bs x length x 1 x noclass; collapse the 1.
-          layer_output = tf.reshape(layer_output, [-1, self.length, noclass])
-          outputs.append(layer_output)
-          vs.reuse_variables()
-
-      outputs = tf.pack(outputs) # depth x batch_size x length x noclass
+      layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "output")
+      outputs = safe_squeeze(layer_output, -2) #remove dimension w/ value -1
       output = tf.reduce_sum(outputs * tf.pack(scales), 0)
       self.layer_outputs = softmax(outputs)
       self.output = softmax(tf.transpose(output, [1,0,2])) # length x batch_size x noclass
+    elif True:
+      output_layer = tf.reduce_sum(self.layers[:,:,:,0,:] * tf.pack(scales), 0)
+      output = conv_linear(tf.expand_dim(output_layer, 2), 1, 1, nmaps, noclass,
+                           True, 0.0, "output")
+      output = safe_squeeze(output, 2)
+      self.output = tf.transpose(softmax(output), [1,0,2])
     else:
       self.layer_outputs = []
 
       scales = [tf.reshape(s, [-1, 1, 1, 1]) for s in scales]
-      output = tf.add_n([curs[i][:,:,:1,:] * scales[i] for i in xrange(self.length)])
+      output = tf.add_n([layers[i][:,:,:1,:] * scales[i] for i in xrange(self.length)])
       output = conv_linear(output, 1, 1, nmaps, noclass, True, 0.0, "output")
       output = tf.reshape(output, [-1, self.length, noclass])
       external_output = [tf.reshape(o, [-1, noclass])
@@ -333,8 +339,9 @@ class NeuralGPUAtSize(object):
     targets = tf.reshape(targets, [-1, noclass])
     xent = tf.reshape(tf.nn.softmax_cross_entropy_with_logits(
         tf.reshape(output, [-1, noclass]), targets), [-1, self.length])
-    perp_loss = tf.reduce_sum(xent * tf.reshape(mask, [-1, self.length]))
-    perp_loss /= tf.cast(batch_size, dtype=tf.float32)
+    perp_loss = tf.reduce_mean(xent * tf.reshape(mask, [-1, self.length]))
+    #perp_loss = tf.reduce_sum(xent * tf.reshape(mask, [-1, self.length]))
+    #perp_loss /= tf.cast(batch_size, dtype=tf.float32)
     perp_loss /= self.length
 
     # Final loss: cross-entropy + shared parameter relaxation part.
@@ -401,7 +408,6 @@ class NeuralGPU(object):
     adam = tf.train.AdamOptimizer(self.lr, epsilon=1e-4, use_locking=True)
 
     # Main graph creation loop, for every bin in data_utils.
-    self.steps = []
     for length in sorted(list(set(data_utils.bins + [data_utils.forward_max]))):
       data_utils.print_out("Creating model for bin of length %d." % length)
       start_time = time.time()
@@ -433,7 +439,7 @@ class NeuralGPU(object):
       feed_out['back_update'] = instance.update
       feed_out['grad_norm'] = instance.grad_norm
     if get_steps:
-      feed_out['step'] = instance.steps
+      feed_out['step'] = instance.layers
     feed_out['loss'] = instance.loss
     feed_out['layer_outputs'] = instance.layer_outputs
     feed_out['output'] = instance.output

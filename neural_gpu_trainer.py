@@ -466,8 +466,9 @@ def main(_):
     evaluate()
   elif FLAGS.mode == 2:
     with tf.Session() as sess:
+      import cProfile as profile
       t = Timer("Starting...")
-      model = initialize(sess)
+      profile.runctx('model = initialize(sess)', globals(), locals(), 'profile')
       t.done()
   else:
     interactive()
