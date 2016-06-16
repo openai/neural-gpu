@@ -80,7 +80,7 @@ def getscores_for_fileset(filenames, key=None, task=(0,None)):
     data = pd.DataFrame(all_series).T
     if len(data) < 2:
         return data
-    data.loc[data.first_valid_index()].fillna(1)
+    data.loc[data.first_valid_index()] = data.loc[data.first_valid_index()].fillna(1)
     data = data.interpolate(method='nearest')
     return data
 
@@ -140,7 +140,7 @@ def get_tasks(key):
     else:
         locs = key.split('=')
         index = [i for i,a in enumerate(locs) if a.endswith('task')][0]+1
-        tasks = locs[index].split('-')[:-1]
+        tasks = locs[index].split('-')[:-1 if index < len(locs)-1 else None]
         return tasks
 
 def get_key(fname):
@@ -152,6 +152,8 @@ def plot_all(func, files, key=None, taskset=None):
         d.setdefault(get_key(f), []).append(f)
 
     longest_cp = os.path.commonprefix(d.keys())
+    print d.keys()
+    print longest_cp
     if longest_cp[-1] == '=': #prettier
         longest_cp = longest_cp.rsplit('-',1)[0]+'-'
 

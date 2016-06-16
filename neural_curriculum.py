@@ -157,7 +157,7 @@ class NeuralGPUResult(object):
     import pylab
     for i in range(self.attention.shape[2]):
       for j in range(self.attention.shape[1]):
-        pylab.plot(self.attention[:,j,i], color='rbgkyo'[j], alpha=0.2)
+        pylab.plot(self.attention[:,j,i], color='rbgkyo'[j], alpha=0.2, marker='o')
     pylab.savefig(figname)
 
 def plot_many_examples(sess, model, max_length, generator, batch_size,
