@@ -72,6 +72,8 @@ def define_flags():
   #tf.app.flags.DEFINE_bool("do_attention", False, "Whether to use attention method.")
   tf.app.flags.DEFINE_integer("num_attention", 0, "Number of attention modules to use.")
 
+  tf.app.flags.DEFINE_bool("do_batchnorm", False, "Whether to use batch normalization.")
+
   tf.app.flags.DEFINE_bool("do_lastout", False, "Whether to use last output.")
   tf.app.flags.DEFINE_bool("do_layers", False, "Expose output for all layers.")
 

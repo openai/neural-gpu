@@ -92,6 +92,7 @@ def relaxed_average(var_name_suffix, rx_step):
         relaxed_vars.append(tf.get_variable(var_name_suffix))
       except ValueError:
         pass
+  assert relaxed_vars
   dsum = tf.add_n(relaxed_vars)
   avg = dsum / len(relaxed_vars)
   diff = [v - avg for v in relaxed_vars]
@@ -123,39 +124,6 @@ def make_dense(targets, noclass):
     length = tf.expand_dims(batch_size * noclass, 0)
     dense = tf.sparse_to_dense(indices, length, 1.0, 0.0)
   return tf.reshape(dense, [-1, noclass])
-
-
-
-def batch_norm(x, n_out, phase_train, scope='bn'):
-    """
-    Batch normalization on convolutional maps.
-    Args:
-        x:           Tensor, 4D BHWD input maps
-        n_out:       integer, depth of input maps
-        phase_train: boolean tf.Varialbe, true indicates training phase
-        scope:       string, variable scope
-    Return:
-        normed:      batch-normalized maps
-    """
-    with tf.variable_scope(scope):
-        beta = tf.Variable(tf.constant(0.0, shape=[n_out]),
-                                     name='beta', trainable=True)
-        gamma = tf.Variable(tf.constant(1.0, shape=[n_out]),
-                                      name='gamma', trainable=True)
-        batch_mean, batch_var = tf.nn.moments(x, [0,1,2], name='moments')
-        ema = tf.train.ExponentialMovingAverage(decay=0.5)
-
-        def mean_var_with_update():
-            ema_apply_op = ema.apply([batch_mean, batch_var])
-            with tf.control_dependencies([ema_apply_op]):
-                return tf.identity(batch_mean), tf.identity(batch_var)
-
-        mean, var = tf.cond(phase_train,
-                            mean_var_with_update,
-                            lambda: (ema.average(batch_mean), ema.average(batch_var)))
-        normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, 1e-3)
-    return normed
-
 
 
 class NeuralGPUAtSize(object):
@@ -199,7 +167,7 @@ class NeuralGPUAtSize(object):
     nmaps = self.config.nmaps
     nconvs = self.config.nconvs
 
-    keep_prob = 1.0 - self.do_training * (self.config.dropout * 8.0 / float(self.length))
+    keep_prob = 1.0 - tf.to_float(self.do_training) * (self.config.dropout * 8.0 / self.length)
     cur = first
     layers = []
     attention_probs_list = []
@@ -221,31 +189,11 @@ class NeuralGPUAtSize(object):
           attention_probs = tf.transpose(mytf.softmax(tf.transpose(logits))) # shape: k x bs
           attention_probs_list.append(attention_probs)
           cur = tf.reduce_sum(mytf.expand_dims_by_k(attention_probs, 3) * vals, 0)
-          # bs x length x height x nmaps
-
-          # parts = tf.unpack(result)
-          # cur_att = parts[0]
-          # attention_vals = []
-          # logit_table = [] # shape: nattention x bs x 1
-          # for i, (key, val) in enumerate(zip(parts[1::2], parts[2::2])):
-          #   if i in [0,1]:
-          #     # self.task shape: bs
-          #     val = tf.select(tf.equal(self.task, i), val, tf.stop_gradient(val))
-          #     key = tf.select(tf.equal(self.task, i), key, tf.stop_gradient(key))
-          #   logit = tf.reduce_sum(cur_att * key, [1,2,3]) # shape: bs
-          #   logit_table.append(tf.expand_dims(logit, 1)) 
-          #   attention_vals.append(tf.expand_dims(val, 0))
-
-          # attention_probs = tf.transpose(tf.nn.softmax(tf.concat(1, logit_table)))
-          # attention_probs_list.append(attention_probs)
-          # attention_vals = tf.concat(0, attention_vals) # shape: 3 x bs x len x h xnmaps
-          # expanded_probs = attention_probs # make it 3 x bs x 1 x 1 x 1
-          # for i in range(3):
-          #   expanded_probs = tf.expand_dims(expanded_probs, -1)
-          # cur = tf.reduce_sum(expanded_probs * attention_vals, [0])
         else:
           cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
 
+        if FLAGS.do_batchnorm:
+          cur = mytf.batch_norm(cur, nmaps, self.do_training, 'bn')
         layers.append(cur)
 
     self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
@@ -324,7 +272,7 @@ class NeuralGPU(object):
     self.lr = float(config.lr)
 
     self.pull = float(config.pull)
-    self.do_training = tf.placeholder(tf.float32, name="do_training")
+    self.do_training = tf.placeholder(tf.bool, shape=[], name="do_training")
 
     # Feeds for inputs, targets, outputs, losses, etc.
     self.instances = []
@@ -373,7 +321,7 @@ class NeuralGPU(object):
     inp, target, taskid = batch
     assert inp.shape == target.shape
     feed_in = {}
-    feed_in[self.do_training] = 1.0 if do_backward else 0.0
+    feed_in[self.do_training] = do_backward
     feed_in[self.task] = taskid
     feed_out = {}
     instance = self.get_instance_for_length(target.shape[1])
