@@ -55,17 +55,11 @@ def tanh_cutoff(x, cutoff):
   glo, ghi = (-tcut, tcut) if tcut else (None, None)
   return tf_cut_function(z, -1, 1, glo, ghi)
 
-def conv_linear(args, kw, kh, nin, nout, do_bias, bias_start, prefix):
+def conv_linear(arg, kw, kh, nin, nout, do_bias, bias_start, prefix):
   """Convolutional linear map."""
-  assert args is not None
-  if not isinstance(args, (list, tuple)):
-    args = [args]
   with tf.variable_scope(prefix):
     k = tf.get_variable("CvK", [kw, kh, nin, nout])
-    if len(args) == 1:
-      res = tf.nn.conv2d(args[0], k, [1, 1, 1, 1], "SAME")
-    else:
-      res = tf.nn.conv2d(tf.concat(3, args), k, [1, 1, 1, 1], "SAME")
+    res = conv2d(arg, k, [1, 1, 1, 1], "SAME")
     if not do_bias: return res
     bias_term = tf.get_variable("CvB", [nout],
                                 initializer=tf.constant_initializer(0.0))
@@ -73,13 +67,12 @@ def conv_linear(args, kw, kh, nin, nout, do_bias, bias_start, prefix):
 
 def conv_gru(mem, kw, kh, nmaps, cutoff, prefix):
   """Convolutional GRU."""
-  def conv_lin(args, suffix, bias_start):
-    return conv_linear(args, kw, kh, len(args) * nmaps, nmaps, True, bias_start,
+  def conv_lin(arg, suffix, bias_start):
+    return conv_linear(arg, kw, kh, nmaps, nmaps, True, bias_start,
                        prefix + "/" + suffix)
-  reset = sigmoid_cutoff(conv_lin([mem], "r", 1.0), cutoff)
-  candidate = tanh_cutoff(conv_lin([reset * mem], "c", 0.0), FLAGS.cutoff_tanh)
-  # candidate = tf.tanh(conv_lin([reset * mem], "c", 0.0))
-  gate = sigmoid_cutoff(conv_lin([mem], "g", 1.0), cutoff)
+  reset = sigmoid_cutoff(conv_lin(mem, "r", 1.0), cutoff)
+  candidate = tanh_cutoff(conv_lin(reset * mem, "c", 0.0), FLAGS.cutoff_tanh)
+  gate = sigmoid_cutoff(conv_lin(mem, "g", 1.0), cutoff)
   return gate * mem + (1 - gate) * candidate
 
 def gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, suffix):
@@ -156,11 +149,36 @@ def tf_shape(tensor):
   """Return the tensor shape in a form tf.reshape understands."""
   return [x or -1 for x in tensor.get_shape().as_list()]
 
-def softmax(array):
-  """Perform a softmax along the final axis but preserve shape."""
-  nclass = array.get_shape()[-1].value
-  result = tf.nn.softmax(tf.reshape(array, [-1, nclass]))
-  return tf.reshape(result, tf_shape(array))
+from functools import wraps
+
+def fix_batching(f, k):
+  """Make a given function f support extra initial dimensions.
+
+  A number of tf.nn operations expect shapes of the form [-1] + lst
+  where len(lst) is a fixed constant, and operate independently on the
+  -1.  This lets them work on shapes of the form lst2 + lst, where
+  lst2 is arbitrary.
+  """
+  @wraps(f)
+  def wrapper(array, *args, **kws):
+    old_shape = array.get_shape().as_list()
+    used_shape = old_shape[-k:]
+    input_reshaped = tf.reshape(array, [-1]+used_shape)
+    output = f(input_reshaped, *args, **kws)
+    new_prefix = [x or -1 for x in old_shape[:-k]]
+    new_suffix = output.get_shape().as_list()[1:]
+    output_reshaped = tf.reshape(output, new_prefix + new_suffix)
+    return output_reshaped
+  return wrapper
+
+softmax = fix_batching(tf.nn.softmax, 1)
+conv2d = fix_batching(tf.nn.conv2d, 3)
+
+# def softmax(array):
+#   """Perform a softmax along the final axis but preserve shape."""
+#   nclass = array.get_shape()[-1].value
+#   result = tf.nn.softmax(tf.reshape(array, [-1, nclass]))
+#   return tf.reshape(result, tf_shape(array))
 
 def check_nonzero(sparse):
   """In a sparse batch of ints, make 1 if it's > 0 and 0 else."""
