@@ -171,17 +171,16 @@ def fix_batching(f, k):
     return output_reshaped
   return wrapper
 
+softmax = fix_batching(tf.nn.softmax, 1)
+conv2d = fix_batching(tf.nn.conv2d, 3)
+
 def safe_squeeze(array, i):
   shape = tf_shape(array)
   assert shape[i] == 1
   return tf.reshape(array, shape[:i] + (shape[i+1:] if (i+1) else []))
 
-softmax = fix_batching(tf.nn.softmax, 1)
-conv2d = fix_batching(tf.nn.conv2d, 3)
-
-def check_nonzero(sparse):
-  """In a sparse batch of ints, make 1 if it's > 0 and 0 else."""
-  return tf.clip_by_value(sparse, 0, 1)
+def expand_dims_by_k(array, k):
+  return tf.reshape(array, tf_shape(array) + [1]*k)
 
 class NeuralGPUAtSize(object):
   """Instantiate the NeuralGPU at a given block size."""
@@ -242,33 +241,39 @@ class NeuralGPUAtSize(object):
           vs.reuse_variables()
         cur = tf.nn.dropout(cur, keep_prob) * mask
 
-        if FLAGS.do_attention:
-          k = 3
+        if FLAGS.num_attention:
+          k = FLAGS.num_attention
           blocks = tf.pack([cur]*(2*k+1))
           result = gru_block(nconvs, blocks, kw, kh, nmaps, cutoff, mask, 'grublocks')
           # shape: (2k+1) x bs x length x height x nmaps
-          parts = tf.unpack(result)
-          cur_att = parts[0]
-          attention_vals = []
-          logit_table = [] # shape: nattention x bs x 1
-          for i in range(3):
-            key = parts[2*i+1]
-            val = parts[2*i+2]
-            if i in [0,1]:
-              # self.task shape: bs
-              val = tf.select(tf.equal(self.task, i), val, tf.stop_gradient(val))
-              key = tf.select(tf.equal(self.task, i), key, tf.stop_gradient(key))
-            logit = tf.reduce_sum(cur_att * key, [1,2,3]) # shape: bs
-            logit_table.append(tf.expand_dims(logit, 1)) 
-            attention_vals.append(tf.expand_dims(val, 0))
-
-          attention_probs = tf.transpose(tf.nn.softmax(tf.concat(1, logit_table)))
+          keys = result[:k,:,:,:,:]
+          vals = result[k:2*k,:,:,:,:]
+          cur_att = result[2*k,:,:,:,:]
+          logits = tf.reduce_sum(keys * cur_att, [-1,-2,-3]) # shape: k x bs
+          attention_probs = tf.transpose(softmax(tf.transpose(logits))) # shape: k x bs
           attention_probs_list.append(attention_probs)
-          attention_vals = tf.concat(0, attention_vals) # shape: 3 x bs x len x h xnmaps
-          expanded_probs = attention_probs # make it 3 x bs x 1 x 1 x 1
-          for i in range(3):
-            expanded_probs = tf.expand_dims(expanded_probs, -1)
-          cur = tf.reduce_sum(expanded_probs * attention_vals, [0])
+          cur = tf.reduce_sum(attention_probs * vals, 0) # bs x length x height x nmaps
+
+          # parts = tf.unpack(result)
+          # cur_att = parts[0]
+          # attention_vals = []
+          # logit_table = [] # shape: nattention x bs x 1
+          # for i, (key, val) in enumerate(zip(parts[1::2], parts[2::2])):
+          #   if i in [0,1]:
+          #     # self.task shape: bs
+          #     val = tf.select(tf.equal(self.task, i), val, tf.stop_gradient(val))
+          #     key = tf.select(tf.equal(self.task, i), key, tf.stop_gradient(key))
+          #   logit = tf.reduce_sum(cur_att * key, [1,2,3]) # shape: bs
+          #   logit_table.append(tf.expand_dims(logit, 1)) 
+          #   attention_vals.append(tf.expand_dims(val, 0))
+
+          # attention_probs = tf.transpose(tf.nn.softmax(tf.concat(1, logit_table)))
+          # attention_probs_list.append(attention_probs)
+          # attention_vals = tf.concat(0, attention_vals) # shape: 3 x bs x len x h xnmaps
+          # expanded_probs = attention_probs # make it 3 x bs x 1 x 1 x 1
+          # for i in range(3):
+          #   expanded_probs = tf.expand_dims(expanded_probs, -1)
+          # cur = tf.reduce_sum(expanded_probs * attention_vals, [0])
         else:
           cur = gru_block(nconvs, cur, kw, kh, nmaps, cutoff, mask, 'lookup')
 
@@ -443,8 +448,7 @@ class NeuralGPU(object):
     feed_out['loss'] = instance.loss
     feed_out['layer_outputs'] = instance.layer_outputs
     feed_out['output'] = instance.output
-    if FLAGS.do_attention:
-      feed_out['attention'] = instance.attention_probs
+    feed_out['attention'] = instance.attention_probs
     res = sess.run(feed_out, feed_in)
     return neural_curriculum.NeuralGPUResult(res, inp, target, taskid)
 
