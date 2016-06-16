@@ -138,8 +138,9 @@ class NeuralGPUResult(object):
     self.taskid = taskid
 
   def accuracy(self, nprint=0):
-    batch_size = self.input.shape[1]
-    return data_utils.accuracy(self.input, np.transpose(self.output, [1,0,2]), self.target, batch_size, nprint)
+    mask = self.target > 0
+    errors = mask * (self.target != np.argmax(self.output, axis=-1))
+    return np.sum(errors), np.sum(mask), np.sum(np.any(errors, axis=1))
 
   @property
   def length(self):

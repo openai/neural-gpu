@@ -403,15 +403,15 @@ class NeuralGPU(object):
   def step(self, sess, batch, do_backward, get_steps=False):
     """Run a step of the network."""
     inp, target, taskid = batch
-    assert len(inp) == len(target)
-    length = len(target)
+    assert inp.shape == target.shape
+    length = target.shape[1]
     feed_in = {}
     feed_in[self.do_training] = 1.0 if do_backward else 0.0
     feed_in[self.task] = taskid
     feed_out = {}
     instance = self.get_instance_for_length(length)
-    feed_in[instance.input] = np.array(inp).T
-    feed_in[instance.target] = np.array(target).T
+    feed_in[instance.input] = inp
+    feed_in[instance.target] = target
     if do_backward:
       feed_out['back_update'] = instance.update
       feed_out['grad_norm'] = instance.grad_norm
@@ -435,7 +435,7 @@ class NeuralGPU(object):
       a = list(a)
     l = self.get_instance_for_length(len(a)).length
     pad = l - len(a)
-    input = np.array([a[::-1] + [0]*pad]).T
+    input = np.array([a[::-1] + [0]*pad])
     result = self.step(sess, (input, input, [0]), False)
-    relevant_output = result.output.argmax(axis=-1).T[0, :(-pad if pad else None)]
+    relevant_output = result.output.argmax(axis=-1)[0, :(-pad if pad else None)]
     return ''.join(map(data_utils.to_symbol, relevant_output[::-1]))
