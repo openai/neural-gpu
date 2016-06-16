@@ -76,6 +76,8 @@ def getscores_for_fileset(filenames, key=None, task=(0,None)):
         if df is None or len(df) < 2:
             continue
         all_series.append(df)
+    if not all_series:
+        return []
     all_series = [a.groupby(level=0).first() for a in all_series] # XXX legacy hack
     data = pd.DataFrame(all_series).T
     data.loc[data.first_valid_index()] = data.loc[data.first_valid_index()].fillna(1)

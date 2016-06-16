@@ -348,7 +348,7 @@ class NeuralGPUAtSize(object):
     perp_loss = tf.reduce_mean(xent * tf.reshape(mask, [-1, self.length]))
     #perp_loss = tf.reduce_sum(xent * tf.reshape(mask, [-1, self.length]))
     #perp_loss /= tf.cast(batch_size, dtype=tf.float32)
-    perp_loss /= self.length
+    #perp_loss /= self.length
 
     # Final loss: cross-entropy + shared parameter relaxation part.
     relax_dist, self.model.avg_op = relaxed_distance(self.config.rx_step)
