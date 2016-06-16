@@ -280,8 +280,8 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
 
   # Normalize and print out accumulated statistics.
   message = ('step %s ' % (global_step, ) +
-             'lr %.8f pull %.3f ' % (model.lr, model.pull) +
              'len %s ' % curriculum.length_str +
+             'lr %.8f pull %.3f ' % (model.lr, model.pull) +
              '%s' % str(results_record)
   )
   data.print_out(message)

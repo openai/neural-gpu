@@ -73,13 +73,11 @@ def getscores_for_fileset(filenames, key=None, task=(0,None)):
     all_series = []
     for dirname in filenames:
         df = getscores_for_dir(dirname, key, task)
-        if df is None:
+        if df is None or len(df) < 2:
             continue
         all_series.append(df)
     all_series = [a.groupby(level=0).first() for a in all_series] # XXX legacy hack
     data = pd.DataFrame(all_series).T
-    if len(data) < 2:
-        return data
     data.loc[data.first_valid_index()] = data.loc[data.first_valid_index()].fillna(1)
     data = data.interpolate(method='nearest')
     return data
@@ -152,7 +150,6 @@ def plot_all(func, files, key=None, taskset=None):
         d.setdefault(get_key(f), []).append(f)
 
     longest_cp = os.path.commonprefix(d.keys())
-    print d.keys()
     print longest_cp
     if longest_cp[-1] == '=': #prettier
         longest_cp = longest_cp.rsplit('-',1)[0]+'-'
