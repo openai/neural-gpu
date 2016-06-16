@@ -195,8 +195,8 @@ class NeuralGPUAtSize(object):
     self.config = model.config
     self.length = length
     # batch_size x length
-    self.input = tf.concat(1, [tf.expand_dims(i, 1) for i in model.input[:length]])
-    self.target = tf.concat(1, [tf.expand_dims(t, 1) for t in model.target[:length]])
+    self.input = tf.placeholder(tf.int32, shape=(None,length), name="input{0}".format(length))
+    self.target = tf.placeholder(tf.int32, shape=(None,length), name="target{0}".format(length))
     #tf.concat(1, [tf.reshape(i, [-1, 1]) for i in model.target[:length]])
     self.emb_weights = model.emb_weights
     self.e0 = model.e0
@@ -363,9 +363,9 @@ class NeuralGPU(object):
 
     self.input = []
     self.target = []
-    for l in xrange(data_utils.forward_max + 1):
-      self.input.append(tf.placeholder(tf.int32, shape=(None,), name="inp{0}".format(l)))
-      self.target.append(tf.placeholder(tf.int32, shape=(None,), name="tgt{0}".format(l)))
+    max_length = data_utils.forward_max + 1
+    self.input.append(tf.placeholder(tf.int32, shape=(None,max_length), name="input"))
+    self.target.append(tf.placeholder(tf.int32, shape=(None,max_length), name="target"))
     self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
 
     with tf.variable_scope("model") as vs:
@@ -409,10 +409,9 @@ class NeuralGPU(object):
     feed_in[self.do_training] = 1.0 if do_backward else 0.0
     feed_in[self.task] = taskid
     feed_out = {}
-    for l in xrange(length):
-      feed_in[self.input[l]] = inp[l]
-      feed_in[self.target[l]] = target[l]
     instance = self.get_instance_for_length(length)
+    feed_in[instance.input] = np.array(inp).T
+    feed_in[instance.target] = np.array(target).T
     if do_backward:
       feed_out['back_update'] = instance.update
       feed_out['grad_norm'] = instance.grad_norm
