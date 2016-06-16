@@ -187,8 +187,9 @@ class NeuralGPUAtSize(object):
   def __init__(self, model, length, adam):
     self.config = model.config
     self.length = length
+    # batch_size x length
     self.input = tf.concat(1, [tf.expand_dims(i, 1) for i in model.input[:length]])
-    self.target = model.target
+    self.target = tf.concat(1, [tf.expand_dims(t, 1) for t in model.target[:length]])
     #tf.concat(1, [tf.reshape(i, [-1, 1]) for i in model.target[:length]])
     self.emb_weights = model.emb_weights
     self.e0 = model.e0
@@ -202,27 +203,18 @@ class NeuralGPUAtSize(object):
 
   def construct_mask(self) :
     # Mask to 0-out padding space in each step.
-    # bmask: length x batch_size
-    bmask = [(self.input[:,l] > 0) | (self.target[l] > 0) for l in xrange(self.length)]
-    # mask: length list of batch_size x 1
-    mask = [tf.to_float(tf.expand_dims(m, 1)) for m in bmask]
-    # Use a shifted mask for step scaling and concatenated for weights.
-    # shifted_mask: (length + 1) list of batch_size x 1
-    shifted_mask = mask + [tf.zeros_like(mask[0])]
-    scales = [shifted_mask[i] * (1 - shifted_mask[i+1]) for i in xrange(self.length)]
-    scales = [tf.reshape(s, [-1, 1, 1]) for s in scales]
-    #scales:  length list of batch_size x 1 x 1 x 1
-    mask = tf.concat(1, mask)  # batch x length
-    mask = expand_dims_by_k(mask, 2) # batch x length x 1 x 1
-    return mask, scales
-
-  def construct_mask_better(self):
-    # Mask to 0-out padding space in each step.
     # bmask: batch_size x length
     bmask = (self.input > 0) | (self.target > 0)
-    # mask: batch_size x length x 1 x 1
-    mask = tf.expand_dims(tf.expand_dims(bmask, 2), 2)
-    return tf.to_float(mask)
+    # mask: batch x length x 1 x 1
+    mask = tf.to_float(expand_dims_by_k(bmask, 2))
+
+    # padded_mask: batch x (length+1) x 1 x 1
+    padded_mask = tf.concat(1, [mask, tf.zeros_like(mask[:,:1,:,:])])
+    # scales: initially batch x length x 1 x 1
+    scales = padded_mask[:,:self.length,:,:] * (1 - padded_mask[:,1:,:,:])
+    # Now length x batch x 1 x 1
+    scales = tf.transpose(scales, [1,0,2,3])
+    return mask, scales
 
   def construct_all_layers(self, first, mask):
     cutoff = self.config.cutoff
@@ -313,13 +305,13 @@ class NeuralGPUAtSize(object):
 
     # Final convolution to get logits, list outputs.
     layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "output")
-    outputs = safe_squeeze(layer_output, -2) #remove dimension w/ value -1
-    output = tf.reduce_sum(outputs * tf.pack(scales), 0)
+    outputs = safe_squeeze(layer_output, -2) # depth x batch x length x noclass
+    output = tf.reduce_sum(outputs * scales, 0)
     self.layer_outputs = softmax(outputs)
     self.output = softmax(tf.transpose(output, [1,0,2])) # length x batch_size x noclass
 
     # Calculate cross-entropy loss and normalize it.
-    targets = tf.concat(1, [make_dense(self.target[l], noclass)
+    targets = tf.concat(1, [make_dense(self.target[:,l], noclass)
                             for l in xrange(self.length)])
     targets = tf.reshape(targets, [-1, noclass])
     xent = tf.reshape(tf.nn.softmax_cross_entropy_with_logits(
