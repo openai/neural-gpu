@@ -47,11 +47,17 @@ conv2d = fix_batching(tf.nn.conv2d, 3)
 softmax_cross_entropy_with_logits = fix_batching(tf.nn.softmax_cross_entropy_with_logits, 1, 2)
 
 
+def masked_moments(x, axes, mask):
+    x = x * mask
+    num_entries = tf.reduce_sum(tf.ones_like(x) * mask, axes)
+    mean = tf.reduce_sum(x, axes) / num_entries
+    var = tf.reduce_sum(tf.squared_difference(x, mean)*mask, axes) / num_entries
+    return (mean, var)
 
 
 # From http://stackoverflow.com/questions/33949786/how-could-i-use-batch-normalization-in-tensorflow
 # and https://github.com/ry/tensorflow-resnet/blob/master/resnet.py
-def batch_norm(x, phase_train, scope='bn'):
+def batch_norm(x, phase_train, mask=None, scope='bn'):
     """
     Batch normalization on convolutional maps.
     Args:
@@ -73,7 +79,10 @@ def batch_norm(x, phase_train, scope='bn'):
         moving_var = tf.get_variable('moving_var', params_shape,
                                      initializer=tf.ones_initializer, trainable=False)
         axes = range(len(x_shape)-1)
-        batch_mean, batch_var = tf.nn.moments(x, axes, name='moments')
+        if mask is None:
+            batch_mean, batch_var = tf.nn.moments(x, axes, name='moments')
+        else:
+            batch_mean, batch_var = masked_moments(x, axes, mask)
 
         update_ops = [
             moving_averages.assign_moving_average(moving_mean, batch_mean, BN_DECAY),
@@ -85,9 +94,19 @@ def batch_norm(x, phase_train, scope='bn'):
         #mean, var = tf.cond(phase_train,
         #                    mean_var_with_update,
         #                    lambda: (moving_mean, moving_var))
-        mean, var = (batch_mean, batch_var)
+        mean, var = mean_var_with_update()#(batch_mean, batch_var)
         normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, BN_EPSILON)
     return normed
 
 
 
+
+def print_bn_state(nmaps):
+    var_list = 'beta gamma moving_mean moving_var'.split()
+    d = {}
+    with tf.variable_scope('model/RX1/bn', reuse=True) as vs:
+        for v in var_list:
+            d[v] = tf.get_variable(v, [nmaps])
+    result = sess.run(d, {})
+    for v in var_list:
+        print v, result[v]

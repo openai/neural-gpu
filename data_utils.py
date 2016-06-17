@@ -97,10 +97,14 @@ class OpGenerator(DataGenerator):
   def is_valid_length(self, l):
     return l%2 == 1 and l > 1
 
-  def rand_pair(self, l):
-    k = (l-1)//2
+  def _rand_inputs(self, k):
     n1 = random.randint(0, self.base**k-1)
     n2 = random.randint(0, self.base**k-1)
+    return (n1, n2)
+
+  def rand_pair(self, l):
+    k = (l-1)//2
+    n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
     inp = np.concatenate([to_base(n1, self.base, k) + 1,
                           [self.sep],
@@ -108,12 +112,36 @@ class OpGenerator(DataGenerator):
     outp = to_base(result, self.base, 2*k+1) + 1
     return inp, outp
 
-generators.update(dict(add=OpGenerator(10, operator.add, 11),
-                       badd=OpGenerator(2, operator.add, 11),
-                       qadd=OpGenerator(4, operator.add, 11),
-                       mul=OpGenerator(10, operator.mul, 12),
-                       bmul=OpGenerator(2, operator.mul, 12),
-                       qmul=OpGenerator(4, operator.mul, 12)))
+generators.update(dict(badd=OpGenerator(2, operator.add, 11),
+                       qadd=OpGenerator(4, operator.add, 12),
+                       add=OpGenerator(10, operator.add, 13),
+                       bmul=OpGenerator(2, operator.mul, 14),
+                       qmul=OpGenerator(4, operator.mul, 15),
+                       mul=OpGenerator(10, operator.mul, 16),))
+
+
+class ToughAddGenerator(OpGenerator):
+  def __init__(self, base, sep):
+    super(ToughAddGenerator, self).__init__(base, operator.add, sep)
+
+  def _rand_inputs(self, k):
+    r = random.random()
+    if r < 0.2:
+      lo, hi = sorted([random.randint(1, k), random.randint(1, k)])
+      vals = (self.base**hi - self.base**(lo-1), random.randint(0,self.base**(lo)-1))
+    elif r < .4:
+      k2 = random.choice([k, random.randint(1, k)])
+      lo = random.randint(1, self.base**k2-1)
+      vals = (lo, self.base**k2 - lo - random.randint(0,1))
+    else:
+      vals = (random.randint(0, self.base**k-1), random.randint(0, self.base**k-1))
+    if random.random() > .5:
+      return vals
+    else:
+      return vals[::-1]
+
+generators.update(dict(baddt=ToughAddGenerator(2, 11),
+                       qaddt=ToughAddGenerator(4, 11),))
 
 class FGenerator(DataGenerator):
   def __init__(self, f):
@@ -154,14 +182,14 @@ for k in generators:
 def to_symbol(i):
   """Covert ids to text."""
   if i == 0: return ""
-  if i == 11: return "+"
-  if i == 12: return "*"
+  if i in [11,12,13]: return "+"
+  if i in [14,15,16]: return "*"
   return str(i-1)
 
 def to_id(s):
   """Covert text to ids."""
   if s == "+": return 11
-  if s == "*": return 12
+  if s == "*": return 14
   return int(s) + 1
 
 def print_out(s, newline=True):

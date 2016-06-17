@@ -40,6 +40,8 @@ class Curriculum(object):
     self.min_length = model_config.min_length
     self.max_length = model_config.max_length
     self.model_config = model_config
+    self.max_cur_lengths = {g.taskid: min(self.min_length+3, self.max_length)
+                            for g in generators}
 
   def draw_length(self, cur_length, generator):
     l = None
@@ -91,22 +93,13 @@ class Curriculum(object):
     return np.random.choice(options)
 
   def get_cur_length(self, generator):
-    pass
-
-class MixedCurriculum(Curriculum):
-  def __init__(self, generators, model_config):
-    super(MixedCurriculum, self).__init__(generators, model_config)
-
-    self.max_cur_lengths = {g.taskid: min(self.min_length+3, self.max_length)
-                            for g in generators}
-
-  def get_cur_length(self, generator):
     return self.max_cur_lengths[generator.taskid]
 
   def consider_extending(self, record):
     ans = False
     for t in record.record_for_task:
       ans = max(ans, self.consider_extending_for_task(record.record_for_task[t], t))
+    return ans
 
   def consider_extending_for_task(self, record, taskid):
     if record.avg_seq_err > self.model_config.curriculum_bound:
@@ -122,6 +115,16 @@ class MixedCurriculum(Curriculum):
   def length_str(self):
     return '/'.join(str(v) for k, v in sorted(self.max_cur_lengths.items()))
 
+class GeneralizeCurriculum(Curriculum):
+
+  def draw_generator(self, task=None):
+    options = (self.generators[:1] if task is None else
+               [g for g in self.generators if g.name == task])
+    return options[0]
+
+  @property
+  def length_str(self):
+    return str(self.max_cur_lengths[self.generators[0].taskid])
 
 class NeuralGPUResult(object):
   grad_norm = None

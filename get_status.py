@@ -68,6 +68,9 @@ class Results(object):
             if dead:
                 self.dead[server] = dead
 
+    def __repr__(self):
+        return '<Results object for %s>' % self.label
+
     @property
     def status(self):
         vals = [res for res in self.results if isinstance(res, dict)]

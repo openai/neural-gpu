@@ -14,6 +14,8 @@
 # ==============================================================================
 """Neural GPU for Learning Algorithms."""
 
+from __future__ import print_function
+
 import math
 import os
 import random
@@ -54,7 +56,7 @@ def define_flags():
   tf.app.flags.DEFINE_integer("max_length", 21, "Maximum length.")
   tf.app.flags.DEFINE_integer("rx_step", 6, "Relax that many recursive steps.")
   tf.app.flags.DEFINE_integer("random_seed", 125459, "Random seed.")
-  tf.app.flags.DEFINE_integer("time_till_ckpt", 10, "How many tests per checkpoint")
+  tf.app.flags.DEFINE_integer("time_till_ckpt", 30, "How many tests per checkpoint")
   tf.app.flags.DEFINE_integer("nconvs", 2, "How many convolutions / 1 step.")
   tf.app.flags.DEFINE_integer("kw", 3, "Kernel width.")
   tf.app.flags.DEFINE_integer("kh", 3, "Kernel height.")
@@ -72,7 +74,7 @@ def define_flags():
   #tf.app.flags.DEFINE_bool("do_attention", False, "Whether to use attention method.")
   tf.app.flags.DEFINE_integer("num_attention", 0, "Number of attention modules to use.")
 
-  tf.app.flags.DEFINE_bool("do_batchnorm", False, "Whether to use batch normalization.")
+  tf.app.flags.DEFINE_integer("do_batchnorm", 0, "Whether to use batch normalization.")
   tf.app.flags.DEFINE_bool("do_resnet", False, "Whether to use resnets.")
 
   tf.app.flags.DEFINE_bool("do_lastout", False, "Whether to use last output.")
@@ -86,13 +88,14 @@ EXTRA_EVAL = 2
 
 
 log_output = None
+step_output = None
 
 def log_parameters(checkpoint_dir):
   """Write enough information in checkpoint_dir for reproducibility.
 
   Also check that we're in a new checkpoint directory.
   """
-  global log_output
+  global log_output, step_output
   command_fname = os.path.join(checkpoint_dir, 'commandline')
   if gfile.Exists(command_fname):
     old_argv = open(command_fname).read().strip()
@@ -103,7 +106,7 @@ def log_parameters(checkpoint_dir):
       data.print_out('NOW %s' % new_argv)
       raise ValueError("Bad log dir")
     else:
-      print 
+      print()
       raise ValueError("Even though the argv didn't change, we'll still kill you.")
 
   with open(command_fname, 'w') as f:
@@ -116,6 +119,7 @@ def log_parameters(checkpoint_dir):
     subprocess.call(['git', 'rev-parse', 'HEAD'], stdout=f)
 
   log_output = open(os.path.join(checkpoint_dir, 'results'), 'w', 1)
+  step_output = open(os.path.join(checkpoint_dir, 'steps'), 'w', 1)
 
 def load_model(sess, checkpoint_dir):
   # possibly tf.reset_default_graph()
@@ -178,7 +182,7 @@ def initialize(sess, checkpoint_dir=None):
 
   # Initialize data for each task.
   nclass = min(config.niclass, config.noclass)
-  tasks = config.task.split("-")
+  tasks = config.task.split(",")
   data_generators = [data.generators[t] for t in tasks]
   for g in data_generators:
     g._initialize(nclass)
@@ -207,7 +211,8 @@ def initialize(sess, checkpoint_dir=None):
                    % ckpt.model_checkpoint_path)
     model.saver.restore(sess, ckpt.model_checkpoint_path)
 
-  curriculum = neural_curriculum.MixedCurriculum(data_generators, model.config)
+    #curriculum = neural_curriculum.MixedCurriculum(data_generators, model.config)
+  curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
   model.curriculum = curriculum
 
   # Return the model and needed variables.
@@ -287,6 +292,8 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
              '%s' % str(results_record)
   )
   data.print_out(message)
+  print(message, file=step_output)
+  mytf.print_bn_state(model.config.nmaps)
 
   would_extend = curriculum.consider_extending(results_record)
   decent = (would_extend >= 1)
@@ -340,6 +347,8 @@ def train_loop(sess, model, batch_size, checkpoint_dir):
     extended, acc = train_for_a_bit(sess, model, batch_size, FLAGS.steps_per_epoch,
                                     max(accuracies[-3:]))
     accuracies.append(acc)
+    if extended: # If we extended, don't just lower the learning rate
+      accuracies.append(1000) 
     timer.done()
 
     # Save checkpoint.
@@ -432,7 +441,7 @@ def animate(l, test_data, anim_size):
 def evaluate():
   """Evaluate an existing model."""
   batch_size = FLAGS.batch_size
-  tasks = FLAGS.task.split("-")
+  tasks = FLAGS.task.split(",")
   with tf.Session() as sess:
     model = initialize(sess)
     bound = data.bins[-1] + 1

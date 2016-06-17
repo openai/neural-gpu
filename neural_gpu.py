@@ -176,11 +176,15 @@ class NeuralGPUAtSize(object):
     return mask, scales
 
   def construct_all_layers(self, first, mask):
+    # first: batch_size x length x height x nmaps
     cutoff = self.config.cutoff
     kw = self.config.kw
     kh = self.config.kh
     nmaps = self.config.nmaps
     nconvs = self.config.nconvs
+
+    avg_length = tf.reduce_mean(tf.reduce_sum(mask, [1,2,3])) # shape: batch_size
+    #desired_norms = mytf.expand_dims_by_k(tf.sqrt(real_lengths), 3) / 6
 
     keep_prob = 1.0 - tf.to_float(self.do_training) * (self.config.dropout * 8.0 / self.length)
     cur = first
@@ -208,7 +212,11 @@ class NeuralGPUAtSize(object):
           cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup', nconvs)
 
         if FLAGS.do_batchnorm:
-          cur = mytf.batch_norm(cur, self.do_training, 'bn')
+          if FLAGS.do_batchnorm == 1:
+            cur = mytf.batch_norm(cur, self.do_training, scope='bn')
+          elif FLAGS.do_batchnorm == 2:
+            cur = mytf.batch_norm(cur, self.do_training, mask, scope='bn')
+
         layers.append(cur)
 
     self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
