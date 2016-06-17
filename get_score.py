@@ -9,9 +9,13 @@ import glob
 import scipy.signal
 import os
 
+import collections
+
 parser = argparse.ArgumentParser(description='Get scores')
 
-parser.add_argument("--key", type=str, default=None)
+RESULT='score'
+
+parser.add_argument("--key", type=str, default=RESULT)
 parser.add_argument("--task", type=str, default='plot')
 parser.add_argument("--title", type=str, default='')
 parser.add_argument("--median", action='store_true')
@@ -19,84 +23,88 @@ parser.add_argument("--smoothing", type=int, default='1')
 parser.add_argument('files', type=str, nargs='+',
                     help='Log files to examine')
 
-def get_simple_scores(fname, taskname=None):
+def get_results_dict(fname):
+    answer = {}
     with open(fname) as f:
         for line in f:
             words = line.split()
             loc, val = words[:2]
-            if taskname and len(words) > 2 and taskname != words[2]:
-                continue
-            try:
-                yield (int(loc), float(val))
-            except ValueError:
-                break
+            taskname = words[2]
+            if taskname not in answer:
+                answer[taskname] = pd.Series(name=RESULT)
+            answer[taskname].loc[int(loc)] = float(val)
+    return answer
 
-def get_scores_for_key(fname, key, index=0):
+def get_scores_dict(fname):
     with open(fname) as f:
         for line in f:
             if line.startswith('step '):
                 entries = line.split()
-                d = dict(zip(entries[::2], entries[1::2]))
+                d = collections.OrderedDict(zip(entries[::2], entries[1::2]))
                 try:
-                    yield (int(d['step']), float(d[key].split('/')[index]))
+                    yield d
                 except ValueError:
                     break
 
-def create_results(dirname):
-    log0_fname = dirname + '/log0'
-    if os.path.exists(log0_fname):
-        with open(dirname+'/results', 'w') as f:
-            with open(log0_fname) as f2:
-                for line in f2:
-                    prefix = 'LARGE ERROR: '
-                    if line.startswith(prefix):
-                        f.write(line[len(prefix):])
-        return True
-    return False
+class Scores(object):
+    def __init__(self, dirname, tasknames=None, prefix=''):
+        self.dirname = dirname
+        self.index = 0
+        if tasknames is None:
+            tasknames = get_tasks(self.key)
+        self.tasknames = tasknames
+        self.prefix = prefix
+        self.result_dfs = {}
+        self.dfs = {}
 
-def getscores_for_dir(dirname, key=None, task=(0,None)):
-    if key is None:
-        if not os.path.exists(dirname+'/results'):
-            if not create_results(dirname):
-                return
-        scores = np.array(list(get_simple_scores(dirname+'/results', task[1])))
-    else:
-        scores = np.array(list(get_scores_for_key(dirname+'/log0', key, task[0])))
-    if not scores.size:
-        return None
-    locs, vals = scores.T
-    df = pd.Series(index=locs, data=vals)
-    return df
+    @property
+    def key(self):
+        return get_key(self.dirname)
 
+    def args_str(self, task=None):
+        label = get_key(self.dirname[len(self.prefix):])
+        return (label +
+                (' (%s)' % task if task and len(self.tasknames) > 1 else ''))
 
-def getscores_for_fileset(filenames, key=None, task=(0,None)):
-    all_series = []
-    for dirname in filenames:
-        df = getscores_for_dir(dirname, key, task)
-        if df is None or len(df) < 2:
-            continue
-        all_series.append(df)
-    if not all_series:
-        return []
-    all_series = [a.groupby(level=0).first() for a in all_series] # XXX legacy hack
-    data = pd.DataFrame(all_series).T
-    data.loc[data.first_valid_index()] = data.loc[data.first_valid_index()].fillna(1)
-    data = data.interpolate(method='nearest')
-    return data
+    def get_scores(self, key, task):
+        if key == RESULT:
+            self._load_results()
+            if task is None:
+                assert len(self.result_dfs) == 1
+                task = self.result_dfs.keys()[0]
+            if task not in self.result_dfs:
+                return None
+            return self.result_dfs[task]
+        else:
+            self._load_scores()
+            if task is None:
+                assert len(self.dfs) == 1
+                task = self.dfs.keys()[0]
+            if task not in self.dfs:
+                return None
+            return self.dfs[task][key]
+
+    def _load_results(self):
+        if self.result_dfs:
+            return
+        self.result_dfs = get_results_dict(self.dirname+'/results')
+
+    def _load_scores(self):
+        if self.dfs:
+            return
+        data_series = {t:{} for t in self.tasknames}
+        for d in get_scores_dict(self.dirname+'/log0'):
+            for key in d:
+                vals = d[key].split('/')
+                if len(vals) == 1:
+                    vals *= len(self.tasknames)
+                for val, task in zip(vals, self.tasknames):
+                    data_series[task].setdefault(key, []).append(float(val))
+        for task in data_series:
+            self.dfs[task] = pd.DataFrame(data_series[task], index=data_series[task]['step'])
 
 def get_name(fname):
     return '/'.join(fname.split('/')[:2])
-
-def print_results(fname, score_pairs):
-    name = get_name(fname)
-    if not score_pairs:
-        print name, '(none)'
-        return
-    locs = [x for x in score_pairs if x[1] == 0]
-    first_loc = locs[0][0] if locs else None
-    scores = [x[1] for x in score_pairs[-5:]]
-    result = np.mean(scores)
-    print '%s\t%s\t%s %s\t%s' % (name, result, np.min(scores), np.max(scores), first_loc)
 
 def plot_start(key):
     pylab.xlabel('Steps of training')
@@ -128,15 +136,9 @@ def plot_results(fname, frame):
     #for k in frame.columns:
     #    pylab.scatter(frame.index, frame[k].values, alpha=0.15, color=v[0].get_color())
 
-def main2(func, files):
-    for fname in files:
-        with open(fname) as f:
-            score_pairs = getscores(f)
-        func(fname, score_pairs)
-
 def get_tasks(key):
     if 'task' not in key:
-        return [None]
+        return ['rev']
     else:
         locs = key.split('=')
         index = [i for i,a in enumerate(locs) if a.endswith('task')][0]+1
@@ -146,50 +148,56 @@ def get_tasks(key):
 def get_key(fname):
     return '/'.join(('-'.join(fname.split('-')[:-2])).split('/')[-2:])
 
-def plot_all(func, files, key=None, taskset=None):
-    d = {}
-    for f in files:
-        d.setdefault(get_key(f), []).append(f)
-
-    longest_cp = os.path.commonprefix(d.keys())
-    print longest_cp, d.keys()
+def get_prefix(fileset):
+    longest_cp = os.path.commonprefix(fileset)
     if longest_cp and longest_cp[-1] == '=': #prettier
         longest_cp = longest_cp.rsplit('-',1)[0]+'-'
+    return longest_cp
 
-    for k in sorted(d):
-        tasks = get_tasks(k)
-        for i, task in enumerate(tasks):
+def plot_all(func, scores, column=None, taskset=None):
+    d = {}
+    for s in scores:
+        d.setdefault(s.key, []).append(s)
+
+    for key in sorted(d):
+        for task in d[key][0].tasknames:
             if task not in taskset:
                 continue
-            scores = getscores_for_fileset(d[k], key, (i, task))
-            if not len(scores):
-                continue
-            if all('do_lastout=True-' in kk for kk in d):
-                k = k.replace('do_lastout=True-', '')
-            func(k[len(longest_cp):] + (' (%s)' % task if task and len(tasks) > 1 else ''), scores)
-    return longest_cp
+            columns = [score.get_scores(column, task)
+                       for score in d[key]]
+            data = pd.DataFrame([c for c in columns if c is not None]).T
+            data.loc[data.first_valid_index()] = data.loc[data.first_valid_index()].fillna(1)
+            data = data.interpolate(method='nearest')
+            func(score.args_str(), data)
+
+legend_locs = dict(score='upper right',
+                   len='lower right',
+                   errors='upper right')
 
 if __name__ == '__main__':
     args =  parser.parse_args()
     all_tasks = sorted(set(x for file in args.files for x in get_tasks(get_key(file))))
+    keys = args.key.split(',')
+    prefix = get_prefix(args.files)
+    scores = [Scores(f, prefix=prefix) for f in args.files]
     if args.task == 'print':
-        plot_all(print_results, args.files, key=args.key)
+        raise ValueError()
     elif args.task == 'plot':
         global pylab
         import pylab
-        for i, task in enumerate(all_tasks):
-            pylab.subplot(1, len(all_tasks), i+1)
-            plot_start(args.key)
-            subtitle = plot_all(plot_results, args.files, key=args.key,
-                                taskset = [task])
-            pylab.legend(loc=0)
-            pylab.ylim((0, None))
-            title = args.title
-            if not title:
-                title = os.path.split(args.files[0])[-2]
-            if subtitle:
-                title += '\nCommon args: %s' % subtitle
-            if len(all_tasks) > 1:
-                title = '%s\n%s' % (task, title)
-            pylab.title(title)
+        title = args.title
+        if not title:
+            title = os.path.split(args.files[0])[-2]
+        title += '\nCommon args: %s' % prefix
+        pylab.suptitle(title)
+        for ki, key in enumerate(keys):
+            for i, task in enumerate(all_tasks):
+                pylab.subplot(len(keys), len(all_tasks), ki*len(all_tasks) + i+1)
+                plot_start(key)
+                plot_all(plot_results, scores, column=key, taskset = [task])
+                pylab.legend(loc=legend_locs.get(key, 0))
+                pylab.title('Task %s' % task)
+                pylab.ylim((0, None))
+                pylab.xlim((0,None))
+        #pylab.tight_layout()
         pylab.show()
