@@ -34,6 +34,7 @@ from tensorflow.python.platform import gfile
 import data_utils as data
 import neural_gpu
 import neural_curriculum
+import mytf
 
 def define_flags():
   tf.app.flags.DEFINE_float("lr", 0.001, "Learning rate.")
@@ -306,8 +307,9 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
     else:
       data.print_out("  Averaging parameters.")
       sess.run(model.avg_op)
-      if results_record.avg_seq_err < (model.config.curriculum_bound / 3.0):
-        model.lr *= 0.98
+      # XXX this used to exist, but it doesn't really make sense
+      #if results_record.values()[0].avg_seq_err < (model.config.curriculum_bound / 3.0):
+      #  model.lr *= 0.98
 
   # Lower learning rate if we're worse than the last 3 checkpoints.
   # XXX improve this in a mixed setting
