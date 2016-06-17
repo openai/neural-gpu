@@ -101,7 +101,7 @@ def batch_norm(x, phase_train, mask=None, scope='bn'):
 
 
 
-def print_bn_state(nmaps):
+def print_bn_state(sess, nmaps):
     var_list = 'beta gamma moving_mean moving_var'.split()
     d = {}
     with tf.variable_scope('model/RX1/bn', reuse=True) as vs:
