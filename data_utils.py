@@ -192,6 +192,7 @@ def to_id(s):
   if s == "*": return 14
   return int(s) + 1
 
+
 def print_out(s, newline=True):
   """Print a message out and log it to file."""
   if log_filename:

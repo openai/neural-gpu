@@ -147,15 +147,30 @@ class NeuralGPUResult(object):
 
   @property
   def length(self):
-    return (self.input[:,0] > 0).sum()
+    return (self.input[0,:] > 0).sum()
+
+  @property
+  def batch_size(self):
+    return len(self.input)
 
   def __repr__(self):
     err, tot, seq_err = self.accuracy()
     return '<NeuralGPUResult: length=%s loss=%s bs=%s err=%s seq_err=%s>' % \
-      (self.length, self.loss, self.input.shape[1], err, seq_err)
+      (self.length, self.loss, self.batch_size, err, seq_err)
 
   def attention_by_layer(self):
     return self.attention.mean(axis=-1).round(3)
+
+  def to_string(self, i=None):
+    if i is None:
+      return '\n'.join(self.to_string(i) for i in range(self.batch_size))
+    input_symbols = ''.join(map(data_utils.to_symbol, self.input[i].astype(int)))
+    output_symbols = ''.join(map(data_utils.to_symbol, self.output[i,:self.length,:].argmax(axis=-1)))
+    target_symbols = ''.join(map(data_utils.to_symbol, self.target[i,:self.length].astype(int)))
+    return '%s\n%s=\n%s %s' % (input_symbols[:self.length//2+1],
+                               input_symbols[self.length//2+1:],
+                               output_symbols.rstrip('0'),
+                               'T' if output_symbols == target_symbols else 'F')
 
   def plot_attention(self, figname):
     import pylab

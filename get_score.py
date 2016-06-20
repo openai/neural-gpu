@@ -142,7 +142,7 @@ def get_tasks(key):
     else:
         locs = key.split('=')
         index = [i for i,a in enumerate(locs) if a.endswith('task')][0]+1
-        tasks = locs[index].split('-')[:-1 if index < len(locs)-1 else None]
+        tasks = locs[index].split('-')[0].split(',')
         return tasks
 
 def get_key(fname):
@@ -150,9 +150,10 @@ def get_key(fname):
 
 def get_prefix(fileset):
     longest_cp = os.path.commonprefix(fileset)
-    if longest_cp and longest_cp[-1] == '=': #prettier
-        longest_cp = longest_cp.rsplit('-',1)[0]+'-'
-    return longest_cp
+    i = 1
+    while i <= len(longest_cp) and longest_cp[-i] not in '-/':
+        i += 1
+    return longest_cp[:len(longest_cp)+ 1-i]
 
 def plot_all(func, scores, column=None, taskset=None):
     d = {}
@@ -166,6 +167,8 @@ def plot_all(func, scores, column=None, taskset=None):
             columns = [score.get_scores(column, task)
                        for score in d[key]]
             data = pd.DataFrame([c for c in columns if c is not None]).T
+            if not len(data):
+                continue
             data.loc[data.first_valid_index()] = data.loc[data.first_valid_index()].fillna(1)
             data = data.interpolate(method='nearest')
             func(score.args_str(), data)

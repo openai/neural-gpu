@@ -339,11 +339,12 @@ class NeuralGPU(object):
         return instance
     raise IndexError('Max instance size %s; %s is too large!' % (instance.length, length))
 
-  def step(self, sess, batch, do_backward, get_steps=False):
+  def step(self, sess, batch, do_backward, get_steps=False, more_feed={}):
     """Run a step of the network."""
     inp, target, taskid = batch
     assert inp.shape == target.shape
     feed_in = {}
+    feed_in.update(more_feed)
     feed_in[self.do_training] = do_backward
     feed_in[self.task] = taskid
     feed_out = {}

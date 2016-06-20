@@ -294,7 +294,8 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
   )
   data.print_out(message)
   print(message, file=step_output)
-  mytf.print_bn_state(sess, model.config.nmaps)
+  if FLAGS.do_batchnorm:
+    mytf.print_bn_state(sess, model.config.nmaps)
 
   would_extend = curriculum.consider_extending(results_record)
   decent = (would_extend >= 1)
