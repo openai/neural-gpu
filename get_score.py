@@ -101,7 +101,10 @@ class Scores(object):
                 for val, task in zip(vals, self.tasknames):
                     data_series[task].setdefault(key, []).append(float(val))
         for task in data_series:
-            self.dfs[task] = pd.DataFrame(data_series[task], index=data_series[task]['step'])
+            try:
+                self.dfs[task] = pd.DataFrame(data_series[task], index=data_series[task]['step'])
+            except KeyError: #Hasn't gotten to 'step' line yet
+                pass
 
 def get_name(fname):
     return '/'.join(fname.split('/')[:2])
@@ -166,7 +169,7 @@ def plot_all(func, scores, column=None, taskset=None):
                 continue
             columns = [score.get_scores(column, task)
                        for score in d[key]]
-            data = pd.DataFrame([c for c in columns if c is not None]).T
+            data = pd.DataFrame([c for c in columns if c is not None and len(c) > 1]).T
             if not len(data):
                 continue
             data.loc[data.first_valid_index()] = data.loc[data.first_valid_index()].fillna(1)
