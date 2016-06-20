@@ -135,6 +135,7 @@ class NeuralGPUResult(object):
   attention = None
 
   def __init__(self, vals, inp, target, taskid):
+    self.feed_out = vals
     self.__dict__.update(vals)
     self.input = inp
     self.target = target

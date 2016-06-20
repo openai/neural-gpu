@@ -55,40 +55,66 @@ def tanh_cutoff(x, cutoff):
   glo, ghi = (-tcut, tcut) if tcut else (None, None)
   return tf_cut_function(z, -1, 1, glo, ghi)
 
+class VariableInitializer(object):
+  variable_usages = {}
 
-def conv_linear(arg, kw, kh, nin, nout, do_bias, bias_start, prefix):
+  def record_variable(self, var, x, y):
+    self.variable_usages.setdefault(var, [])
+    self.variable_usages[var].append((x,y))
+
+  def get_feed(self):
+    ans = {}
+    for k, lst in self.variable_usages.items():
+      norms = [[tf.sqrt(tf.reduce_sum(v ** 2)) for v in pair] for pair in lst]
+      ratios = [n1/n2 for n1, n2 in norms]
+      ans[k] = ratios
+    return ans
+
+  def use_feed(self, sess, result):
+    ops = []
+    for k in self.variable_usages:
+      ratio = np.median(result[k])
+      #print 'initial scaling %s %s : %s' % (k.op.name, ratio, result[k])
+      ops.append(tf.assign(k, k * ratio))
+    sess.run(ops)
+
+def conv_linear(arg, kw, kh, nin, nout, do_bias, bias_start, prefix, initializer):
   """Convolutional linear map."""
   with tf.variable_scope(prefix):
     k = tf.get_variable("CvK", [kw, kh, nin, nout])
     res = mytf.conv2d(arg, k, [1, 1, 1, 1], "SAME")
+    initializer.record_variable(k, arg, res)
+
     if not do_bias: return res
     bias_term = tf.get_variable("CvB", [nout],
                                 initializer=tf.constant_initializer(0.0))
     return res + bias_term + bias_start
 
-def conv_gru(mem, kw, kh, nmaps, cutoff, prefix):
+def conv_gru(mem, kw, kh, nmaps, cutoff, prefix, initializer):
   """Convolutional GRU."""
   def conv_lin(arg, suffix, bias_start):
     return conv_linear(arg, kw, kh, nmaps, nmaps, True, bias_start,
-                       prefix + "/" + suffix)
+                       prefix + "/" + suffix, initializer)
   reset = sigmoid_cutoff(conv_lin(mem, "r", 1.0), cutoff)
   candidate = tanh_cutoff(conv_lin(reset * mem, "c", 0.0), FLAGS.cutoff_tanh)
   gate = sigmoid_cutoff(conv_lin(mem, "g", 1.0), cutoff)
   return gate * mem + (1 - gate) * candidate
 
-def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, nconvs=2):
+def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, initializer, nconvs=2):
   old = cur
   for i in xrange(nconvs):
-    cur = conv_linear(cur, kw, kh, nmaps, nmaps, True, 0.0, "cgru_%d_%s" % (i, suffix))
+    cur = conv_linear(cur, kw, kh, nmaps, nmaps, True, 0.0, "cgru_%d_%s" % (i, suffix),
+                      initializer)
     if i == nconvs - 1:
       cur = old + cur
     cur = tf.nn.relu(cur * mask)
   return cur
 
-def lstm_block(cur, kw, kh, nmaps, cutoff, mask, suffix, nconvs=2):
+def lstm_block(cur, kw, kh, nmaps, cutoff, mask, suffix, initializer, nconvs=2):
   # Do nconvs-many CGRU steps.
   for layer in xrange(nconvs):
-    cur = conv_gru(cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix))
+    cur = conv_gru(cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix),
+                   initializer)
     cur *= mask
   return cur
 
@@ -129,18 +155,6 @@ def relaxed_distance(rx_step):
       ops.append(v.assign(rx_done[rx_name]))
   return tf.add_n(res), tf.group(*ops)
 
-
-def make_dense(targets, noclass):
-  """Move a batch of targets to a dense 1-hot representation."""
-  if True:#with tf.device("/cpu:0"):
-    shape = tf.shape(targets)
-    batch_size = shape[0]
-    indices = targets + noclass * tf.range(0, batch_size)
-    length = tf.expand_dims(batch_size * noclass, 0)
-    dense = tf.sparse_to_dense(indices, length, 1.0, 0.0)
-  return tf.reshape(dense, [-1, noclass])
-
-
 class NeuralGPUAtSize(object):
   """Instantiate the NeuralGPU at a given block size."""
   def __init__(self, model, length, adam):
@@ -158,6 +172,7 @@ class NeuralGPUAtSize(object):
 
     self.task = model.task
 
+    self.initializer = VariableInitializer()
     self.construct_graph(adam)
 
   def construct_mask(self) :
@@ -188,18 +203,19 @@ class NeuralGPUAtSize(object):
 
     keep_prob = 1.0 - tf.to_float(self.do_training) * (self.config.dropout * 8.0 / self.length)
     cur = first
-    layers = []
+    layers = [first]
     attention_probs_list = []
     for it in xrange(self.length):
       with tf.variable_scope("RX%d" % (it % self.config.rx_step)) as vs:
         if it >= self.config.rx_step:
           vs.reuse_variables()
-        cur = tf.nn.dropout(cur, keep_prob) * mask
+        cur = tf.nn.dropout(cur, keep_prob)
 
         if FLAGS.num_attention:
           k = FLAGS.num_attention
           blocks = tf.pack([cur]*(2*k+1))
-          result = gru_block(blocks, kw, kh, nmaps, cutoff, mask, 'grublocks', nconvs)
+          result = gru_block(blocks, kw, kh, nmaps, cutoff, mask, 'grublocks',
+                             self.initializer, nconvs)
           # shape: (2k+1) x bs x length x height x nmaps
           keys = result[:k,:,:,:,:]
           vals = result[k:2*k,:,:,:,:]
@@ -209,13 +225,15 @@ class NeuralGPUAtSize(object):
           attention_probs_list.append(attention_probs)
           cur = tf.reduce_sum(mytf.expand_dims_by_k(attention_probs, 3) * vals, 0)
         else:
-          cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup', nconvs)
+          cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup',
+                          self.initializer, nconvs)
 
         if FLAGS.do_batchnorm:
           if FLAGS.do_batchnorm == 1:
             cur = mytf.batch_norm(cur, self.do_training, scope='bn')
           elif FLAGS.do_batchnorm == 2:
             cur = mytf.batch_norm(cur, self.do_training, mask, scope='bn')
+          cur = cur * mask
 
         layers.append(cur)
 
@@ -244,16 +262,16 @@ class NeuralGPUAtSize(object):
     # First image comes from start by applying one convolution and adding 0s.
     # first: batch_size x length x height x nmaps
     first = conv_linear(tf.expand_dims(start, 2),
-                        1, 1, vec_size, nmaps, True, 0.0, "input")
-    first = tf.concat(2, [first] + [tf.zeros_like(first)]*(height - 1))
+                        1, 1, vec_size, nmaps, True, 0.0, "input", self.initializer)
+    first = tf.concat(2, [first] + [tf.zeros_like(first)]*(height - 1)) * mask
 
     # Computation steps.
-    layers = self.construct_all_layers(first, mask)
+    self.construct_all_layers(first, mask)
 
     # Final convolution to get logits, list outputs.
-    layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "output")
-    outputs = mytf.safe_squeeze(layer_output, -2) # depth x batch x length x noclass
-    output = tf.reduce_sum(outputs * scales, 0)
+    layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "output", self.initializer)
+    outputs = mytf.safe_squeeze(layer_output, -2) # (depth+1) x batch x length x noclass
+    output = tf.reduce_sum(outputs[1:,:,:,:] * scales, 0)
     self.layer_outputs = mytf.softmax(outputs)
     self.output = mytf.softmax(output) # batch_size x length x noclass
 
@@ -278,10 +296,40 @@ class NeuralGPUAtSize(object):
       update = adam.apply_gradients(zip(grads, params),
                                     global_step=self.model.global_step)
       self.update = update
-    #import ipdb; ipdb.set_trace()
 
-    def __repr__(self):
-      return '<NeuralGPUAtSize %s>' % (self.length)
+  def __repr__(self):
+    return '<NeuralGPUAtSize %s>' % (self.length)
+
+  def get_initial_scaling(self, sess, batch_size=32):
+    feed = self.initializer.get_feed()
+    batch = (np.random.randint(0, self.config.niclass, (batch_size, self.length)),
+             np.random.randint(0, self.config.noclass, (batch_size, self.length)),
+             np.random.randint(0, 1, batch_size))
+    result = self.step(sess, batch, more_feed=feed)
+    self.initializer.use_feed(sess, result.feed_out)
+
+  def step(self, sess, batch, do_backward=False, get_steps=False, more_feed={}):
+    """Run a step of the network."""
+    inp, target, taskid = batch
+    assert inp.shape == target.shape
+    feed_in = {}
+    feed_in[self.do_training] = do_backward
+    feed_in[self.task] = taskid
+    feed_in[self.input] = inp
+    feed_in[self.target] = target
+    feed_out = {}
+    feed_out.update(more_feed)
+    if do_backward:
+      feed_out['back_update'] = self.update
+      feed_out['grad_norm'] = self.grad_norm
+    if get_steps:
+      feed_out['step'] = self.layers
+    feed_out['loss'] = self.loss
+    feed_out['layer_outputs'] = self.layer_outputs
+    feed_out['output'] = self.output
+    feed_out['attention'] = self.attention_probs
+    res = sess.run(feed_out, feed_in)
+    return neural_curriculum.NeuralGPUResult(res, inp, target, taskid)
 
 class NeuralGPU(object):
   """Neural GPU Model."""
@@ -339,29 +387,14 @@ class NeuralGPU(object):
         return instance
     raise IndexError('Max instance size %s; %s is too large!' % (instance.length, length))
 
-  def step(self, sess, batch, do_backward, get_steps=False, more_feed={}):
+  def step(self, sess, batch, *args, **kws):
     """Run a step of the network."""
     inp, target, taskid = batch
-    assert inp.shape == target.shape
-    feed_in = {}
-    feed_in.update(more_feed)
-    feed_in[self.do_training] = do_backward
-    feed_in[self.task] = taskid
-    feed_out = {}
     instance = self.get_instance_for_length(target.shape[1])
-    feed_in[instance.input] = inp
-    feed_in[instance.target] = target
-    if do_backward:
-      feed_out['back_update'] = instance.update
-      feed_out['grad_norm'] = instance.grad_norm
-    if get_steps:
-      feed_out['step'] = instance.layers
-    feed_out['loss'] = instance.loss
-    feed_out['layer_outputs'] = instance.layer_outputs
-    feed_out['output'] = instance.output
-    feed_out['attention'] = instance.attention_probs
-    res = sess.run(feed_out, feed_in)
-    return neural_curriculum.NeuralGPUResult(res, inp, target, taskid)
+    return instance.step(sess, batch, *args, **kws)
+
+  def renormalize(self, sess):
+    self.instances[0].get_initial_scaling(sess)
 
   def simple_step(self, sess, a):
     """Run a simple operation on one input.

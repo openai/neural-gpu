@@ -203,6 +203,7 @@ def initialize(sess, checkpoint_dir=None):
   model = neural_gpu.NeuralGPU(config)
   data.print_out("Created model.")
   sess.run(tf.initialize_all_variables())
+  model.renormalize(sess)
   data.print_out("Initialized variables.")
 
   # Load model from parameters if a checkpoint exists.
