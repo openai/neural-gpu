@@ -56,7 +56,9 @@ def tanh_cutoff(x, cutoff):
   return tf_cut_function(z, -1, 1, glo, ghi)
 
 class VariableInitializer(object):
-  variable_usages = {}
+
+  def __init__(self):
+    self.variable_usages = {}
 
   def record_variable(self, var, x, y):
     self.variable_usages.setdefault(var, [])
@@ -166,11 +168,11 @@ class NeuralGPUAtSize(object):
     #tf.concat(1, [tf.reshape(i, [-1, 1]) for i in model.target[:length]])
     self.emb_weights = model.emb_weights
     self.e0 = model.e0
-    self.do_training = model.do_training
+    self.do_training = tf.placeholder(tf.bool, shape=[], name="do_training")
 
     self.model = model
 
-    self.task = model.task
+    self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
 
     self.initializer = VariableInitializer()
     self.construct_graph(adam)
@@ -343,17 +345,9 @@ class NeuralGPU(object):
     self.lr = float(config.lr)
 
     self.pull = float(config.pull)
-    self.do_training = tf.placeholder(tf.bool, shape=[], name="do_training")
 
     # Feeds for inputs, targets, outputs, losses, etc.
     self.instances = []
-
-    self.input = []
-    self.target = []
-    max_length = data_utils.forward_max + 1
-    self.input.append(tf.placeholder(tf.int32, shape=(None,max_length), name="input"))
-    self.target.append(tf.placeholder(tf.int32, shape=(None,max_length), name="target"))
-    self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
 
     with tf.variable_scope("model") as vs:
       self.construct_graph()
