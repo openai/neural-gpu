@@ -91,10 +91,10 @@ def batch_norm(x, phase_train, mask=None, scope='bn'):
             with tf.control_dependencies(update_ops):
                 return tf.identity(batch_mean), tf.identity(batch_var)
 
-        #mean, var = tf.cond(phase_train,
-        #                    mean_var_with_update,
-        #                    lambda: (moving_mean, moving_var))
-        mean, var = mean_var_with_update()#(batch_mean, batch_var)
+        mean, var = tf.cond(phase_train,
+                            mean_var_with_update,
+                            lambda: (moving_mean, moving_var))
+        #mean, var = mean_var_with_update()#(batch_mean, batch_var)
         normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, BN_EPSILON)
     return normed
 
