@@ -73,13 +73,19 @@ class DataGenerator(object):
   def rand_pair_padded(self, length):
     pad_length = pad(length)
     data = self.rand_pair(length)
-    return [np.concatenate([x, np.zeros(pad_length - len(x))], axis=-1)
+    return [np.concatenate([x, np.zeros(x.shape[:-1] + (pad_length - x.shape[-1],))],
+                           axis=-1)
             for x in data]
 
   def get_batch(self, length, batch_size):
-    result = np.array([self.rand_pair_padded(length)
-                       for _ in xrange(batch_size)])
-    inp, outp = result.transpose([1,0,2])
+    inps, outps = [], []
+    for _ in xrange(batch_size):
+      inp, outp = self.rand_pair_padded(length)
+      inps.append(inp)
+      outps.append(outp)
+
+    inp = np.stack(inps, 0)
+    outp = np.stack(outps, 0)
     return inp, outp, np.array([self.taskid] * batch_size)
 
   def _initialize(self, nclass):
@@ -142,6 +148,24 @@ class ToughAddGenerator(OpGenerator):
 
 generators.update(dict(baddt=ToughAddGenerator(2, 11),
                        qaddt=ToughAddGenerator(4, 11),))
+
+
+class EasyOpGenerator(OpGenerator):
+  def rand_pair(self, l):
+    k = (l-1)//2
+    n1, n2 = self._rand_inputs(k)
+    result = self.f(n1, n2)
+    n1, n2 = [to_base(n, self.base, k) + 1 for n in [n1,n2]]
+    preferred_length = l#max(len(n1), len(n2))+1
+    pad_n1, pad_n2 = [np.pad(n,(0, preferred_length-len(n)), 'constant') for n in (n1, n2)]
+    pad_n2[len(n2)] = self.sep
+    inp2 = np.vstack([pad_n1, pad_n2])
+    o = to_base(result, self.base) + 1  #XXX cheating on length here
+    outp = np.pad(o, (0, preferred_length - len(o)), 'constant')
+    return inp2, outp
+
+generators.update(dict(badde=EasyOpGenerator(2, operator.add, 11),
+                       qadde=EasyOpGenerator(4, operator.add, 11),))
 
 class FGenerator(DataGenerator):
   def __init__(self, f):
@@ -210,3 +234,8 @@ def safe_exp(x):
   if x < 100: perp = math.exp(x)
   if perp > 10000: return 10000
   return perp
+
+def load_class(name):
+  modulename, classname = name.rsplit('.', 1)
+  module = __import__(modulename)
+  return getattr(module, classname)

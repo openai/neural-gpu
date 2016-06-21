@@ -72,6 +72,8 @@ def define_flags():
   tf.app.flags.DEFINE_string("task", "rev", "Which task are we learning?")
   tf.app.flags.DEFINE_string("train_dir", "/tmp/neural", "Directory to store models.")
 
+  tf.app.flags.DEFINE_string("model_class", "neural_gpu.NeuralGPU", "Model class")
+
   #tf.app.flags.DEFINE_bool("do_attention", False, "Whether to use attention method.")
   tf.app.flags.DEFINE_integer("num_attention", 0, "Number of attention modules to use.")
 
@@ -80,6 +82,7 @@ def define_flags():
 
   tf.app.flags.DEFINE_bool("do_lastout", False, "Whether to use last output.")
   tf.app.flags.DEFINE_bool("do_layers", False, "Expose output for all layers.")
+  tf.app.flags.DEFINE_integer("input_height", 1, "Input height.")
 
 FLAGS = tf.app.flags.FLAGS
 if not FLAGS.__parsed: # Hack so reload() works
@@ -130,7 +133,8 @@ def load_model(sess, checkpoint_dir):
   FLAGS.__flags.update(options)
   data.forward_max = max(FLAGS.forward_max, data.bins[-1])
   config = neural_curriculum.NeuralConfig(FLAGS)
-  model = neural_gpu.NeuralGPU(config)
+  cls = data.load_class(config.model_class)
+  model = cls(config)
   ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
   if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
     model.saver.restore(sess, ckpt.model_checkpoint_path)
@@ -200,7 +204,8 @@ def initialize(sess, checkpoint_dir=None):
   # Create model and initialize it.
   tf.get_variable_scope().set_initializer(
       tf.uniform_unit_scaling_initializer(factor=1.8 * FLAGS.init_weight))
-  model = neural_gpu.NeuralGPU(config)
+  cls = data.load_class(config.model_class)
+  model = cls(config)
   data.print_out("Created model.")
   sess.run(tf.initialize_all_variables())
   model.renormalize(sess)

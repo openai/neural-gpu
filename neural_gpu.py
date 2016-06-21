@@ -163,7 +163,8 @@ class NeuralGPUAtSize(object):
     self.config = model.config
     self.length = length
     # batch_size x length
-    self.input = tf.placeholder(tf.int32, shape=(None,length), name="input{0}".format(length))
+    self.input = tf.placeholder(tf.int32, shape=(None,self.config.input_height,length),
+                                name="input{0}".format(length))
     self.target = tf.placeholder(tf.int32, shape=(None,length), name="target{0}".format(length))
     #tf.concat(1, [tf.reshape(i, [-1, 1]) for i in model.target[:length]])
     self.emb_weights = model.emb_weights
@@ -180,7 +181,7 @@ class NeuralGPUAtSize(object):
   def construct_mask(self) :
     # Mask to 0-out padding space in each step.
     # bmask: batch_size x length
-    bmask = (self.input > 0) | (self.target > 0)
+    bmask = tf.reduce_any(self.input > 0, 1) | (self.target > 0)
     # mask: batch x length x 1 x 1
     mask = tf.to_float(mytf.expand_dims_by_k(bmask, 2))
 
@@ -243,29 +244,36 @@ class NeuralGPUAtSize(object):
     self.layers = tf.pack(layers)
     return layers
 
-  def construct_graph(self, adam):
+  def _get_first_layer(self, mask):
+    """Turn the input into a batch_size x length x height x nmaps tensor"""
     nmaps = self.config.nmaps
     vec_size = self.config.nmaps
-    noclass = self.config.noclass
     height = self.config.height
 
-    # The general tensor shape is
-    # batchsize x length x height x nmaps
-
     # Embed inputs and calculate mask.
-    if True:#with tf.device("/cpu:0"):
-      with tf.control_dependencies([self.e0]):
-        embedded = tf.nn.embedding_lookup(self.emb_weights, self.input)
-      mask, scales = self.construct_mask()
+    with tf.control_dependencies([self.e0]):
+      embedded = tf.nn.embedding_lookup(self.emb_weights, self.input)
 
-    # start: batch_size x length x nmaps
-    start = tf.tanh(embedded)
+    # start: batch_size x length x 1 x nmaps
+    start = tf.tanh(tf.transpose(embedded, [0,2,1,3]))
 
     # First image comes from start by applying one convolution and adding 0s.
     # first: batch_size x length x height x nmaps
-    first = conv_linear(tf.expand_dims(start, 2),
+    first = conv_linear(start,
                         1, 1, vec_size, nmaps, True, 0.0, "input", self.initializer)
-    first = tf.concat(2, [first] + [tf.zeros_like(first)]*(height - 1)) * mask
+    first = tf.concat(2, [first] + [tf.zeros_like(first[:,:,:1,:])]*(height - 1)) * mask
+
+    return first
+
+  def construct_graph(self, adam):
+    nmaps = self.config.nmaps
+    noclass = self.config.noclass
+
+    mask, scales = self.construct_mask()
+
+    # The general tensor shape is
+    # batchsize x length x height x nmaps
+    first = self._get_first_layer(mask)
 
     # Computation steps.
     self.construct_all_layers(first, mask)
@@ -313,7 +321,14 @@ class NeuralGPUAtSize(object):
   def step(self, sess, batch, do_backward=False, get_steps=False, more_feed={}):
     """Run a step of the network."""
     inp, target, taskid = batch
-    assert inp.shape == target.shape
+    assert inp.shape[0] == target.shape[0]
+    assert inp.shape[-1] == target.shape[-1]
+    if len(inp.shape) == 2:
+      inp = np.expand_dims(inp, 1)
+    assert len(inp.shape) == 3
+    if inp.shape[1] < self.config.input_height:
+      extra = self.config.input_height - inp.shape[1]
+      inp = np.concatenate([inp] + [np.zeros_like(inp[:,:1,:])]*extra, axis=1)
     feed_in = {}
     feed_in[self.do_training] = do_backward
     feed_in[self.task] = taskid
@@ -335,7 +350,6 @@ class NeuralGPUAtSize(object):
 
 class NeuralGPU(object):
   """Neural GPU Model."""
-
   def __init__(self, config):
     self.t = time.time()
     self.config = config
@@ -384,7 +398,7 @@ class NeuralGPU(object):
   def step(self, sess, batch, *args, **kws):
     """Run a step of the network."""
     inp, target, taskid = batch
-    instance = self.get_instance_for_length(target.shape[1])
+    instance = self.get_instance_for_length(target.shape[-1])
     return instance.step(sess, batch, *args, **kws)
 
   def renormalize(self, sess):
