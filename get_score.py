@@ -93,7 +93,7 @@ class Scores(object):
         if self.dfs:
             return
         data_series = {t:{} for t in self.tasknames}
-        for d in get_scores_dict(self.dirname+'/log0'):
+        for d in get_scores_dict(self.dirname+'/steps'): #log0
             for key in d:
                 vals = d[key].split('/')
                 if len(vals) == 1:
