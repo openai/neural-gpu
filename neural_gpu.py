@@ -340,7 +340,7 @@ class NeuralGPUAtSize(object):
       feed_out['back_update'] = self.update
       feed_out['grad_norm'] = self.grad_norm
     if get_steps:
-      feed_out['step'] = self.layers
+      feed_out['layers'] = self.layers
     feed_out['loss'] = self.loss
     feed_out['layer_outputs'] = self.layer_outputs
     feed_out['output'] = self.output

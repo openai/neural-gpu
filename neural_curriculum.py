@@ -149,7 +149,7 @@ class NeuralGPUResult(object):
 
   @property
   def length(self):
-    return (self.input[0,:] > 0).sum()
+    return (self.input[0,0,:] > 0).sum()
 
   @property
   def batch_size(self):
@@ -166,13 +166,17 @@ class NeuralGPUResult(object):
   def to_string(self, i=None):
     if i is None:
       return '\n'.join(self.to_string(i) for i in range(self.batch_size))
-    input_symbols = ''.join(map(data_utils.to_symbol, self.input[i].astype(int)))
-    output_symbols = ''.join(map(data_utils.to_symbol, self.output[i,:self.length,:].argmax(axis=-1)))
-    target_symbols = ''.join(map(data_utils.to_symbol, self.target[i,:self.length].astype(int)))
-    return '%s\n%s=\n%s %s' % (input_symbols[:self.length//2+1],
-                               input_symbols[self.length//2+1:],
+    input_symbols = data_utils.to_string(self.input[i].astype(int))
+    output_symbols = data_utils.to_string(self.output[i,:self.length,:].argmax(axis=-1)).rstrip(' 0')
+    target_symbols = data_utils.to_string(self.target[i,:self.length].astype(int))
+    inp_str = (input_symbols if self.input.shape[1] > 1 else
+               '%s\n%s' % (input_symbols[:self.length//2+1],
+                           input_symbols[self.length//2+1:]))
+    return '%s=\n%s %s\n%s' % (input_symbols,
                                output_symbols.rstrip('0'),
-                               'T' if output_symbols == target_symbols else 'F')
+                               'T' if output_symbols == target_symbols else 'F',
+                               target_symbols
+    )
 
   def plot_attention(self, figname):
     import pylab

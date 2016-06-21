@@ -36,9 +36,9 @@ log_filename = ""
 
 
 def pad(l):
-  for b in bins:
+  for b in bins + [forward_max]:
     if b >= l: return b
-  return forward_max
+  raise IndexError("Length %s longer than max length %s" % (l, forward_max))
 
 def to_base(num, b, l=1):
   assert num >= 0
@@ -150,7 +150,7 @@ generators.update(dict(baddt=ToughAddGenerator(2, 11),
                        qaddt=ToughAddGenerator(4, 11),))
 
 
-class EasyOpGenerator(OpGenerator):
+class AlignedOpGenerator(OpGenerator):
   def rand_pair(self, l):
     k = (l-1)//2
     n1, n2 = self._rand_inputs(k)
@@ -164,8 +164,16 @@ class EasyOpGenerator(OpGenerator):
     outp = np.pad(o, (0, preferred_length - len(o)), 'constant')
     return inp2, outp
 
-generators.update(dict(badde=EasyOpGenerator(2, operator.add, 11),
-                       qadde=EasyOpGenerator(4, operator.add, 11),))
+class AlignedToughAddGenerator(AlignedOpGenerator, ToughAddGenerator):
+  pass
+
+generators.update(dict(badde=AlignedOpGenerator(2, operator.add, 11),
+                       qadde=AlignedOpGenerator(4, operator.add, 12),
+                       adde=AlignedOpGenerator(10, operator.add, 13),
+                       baddet=AlignedToughAddGenerator(2, 11),
+                       qaddet=AlignedToughAddGenerator(4, 12),
+                       addet=AlignedToughAddGenerator(10, 13),
+))
 
 class FGenerator(DataGenerator):
   def __init__(self, f):
@@ -203,13 +211,26 @@ generators.update(dict(dup=DupGenerator(),
 for k in generators:
   generators[k].name = k
 
-def to_symbol(i):
+@np.vectorize
+def char_to_symbol(i):
   """Covert ids to text."""
-  if i == 0: return ""
+  if i == 0: return " "
   if i in [11,12,13]: return "+"
   if i in [14,15,16]: return "*"
   return str(i-1)
 
+def join_array(array):
+  if len(array.shape) == 1:
+    return ''.join(array).rstrip(' ')
+  elif len(array.shape) == 2:
+    return '\n'.join([''.join(a).rstrip(' ') for a in array])
+  else:
+    raise ValueError("Weird shape for joining: %s" % array.shape)
+
+def to_string(array):
+  return join_array(char_to_symbol(array))
+
+@np.vectorize
 def to_id(s):
   """Covert text to ids."""
   if s == "+": return 11
