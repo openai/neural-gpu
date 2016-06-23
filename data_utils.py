@@ -104,12 +104,12 @@ class OpGenerator(DataGenerator):
     return l%2 == 1 and l > 1
 
   def _rand_inputs(self, k):
+    k = int(k)
     n1 = random.randint(0, self.base**k-1)
     n2 = random.randint(0, self.base**k-1)
     return (n1, n2)
 
   def rand_pair(self, l):
-    k = (l-1)//2
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
     inp = np.concatenate([to_base(n1, self.base, k) + 1,
@@ -131,6 +131,7 @@ class ToughAddGenerator(OpGenerator):
     super(ToughAddGenerator, self).__init__(base, operator.add, sep)
 
   def _rand_inputs(self, k):
+    k = int(k)
     r = random.random()
     if r < 0.2:
       lo, hi = sorted([random.randint(1, k), random.randint(1, k)])
@@ -152,7 +153,7 @@ generators.update(dict(baddt=ToughAddGenerator(2, 11),
 
 class AlignedOpGenerator(OpGenerator):
   def rand_pair(self, l):
-    k = (l-1)//2
+    k = int((l-1)//2)
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
     n1, n2 = [to_base(n, self.base, k) + 1 for n in [n1,n2]]
