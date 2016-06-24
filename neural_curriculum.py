@@ -211,12 +211,15 @@ class ResultsRecord(object):
     def fmt_attr(name, fmt, label, scale=1):
       return label + ' '  + '/'.join(fmt % (getattr(v, name)*scale)
                                      for v in self.record_for_task.values())
-    return ' '.join([fmt_attr('avg_ppx', '%.8f', 'ppx'),
-                     fmt_attr('avg_grad_norm', '%.8f', 'grad-norm'),
-                     fmt_attr('avg_step_time', '%s', 'step-time'),
-                     fmt_attr('avg_err', '%.2f', 'errors', 100), 
-                     fmt_attr('avg_seq_err', '%.2f', 'seq-errors', 100),
-                     ])
+    stat_list = [fmt_attr('avg_ppx', '%.8f', 'ppx'),
+                fmt_attr('avg_grad_norm', '%.8f', 'grad-norm'),
+                fmt_attr('avg_step_time', '%s', 'step-time'),
+                fmt_attr('avg_err', '%.2f', 'errors', 100),
+                fmt_attr('avg_seq_err', '%.2f', 'seq-errors', 100),
+                ]
+    if hasattr(self.record_for_task.values()[0], 'binary_gap'):
+      stat_list.append(fmt_attr('avg_binary_gap', '%.3f', 'binary-gap'))
+    return ' '.join(stat_list)
 
 class ResultsRecordPerTask(object):
   def __init__(self, batch_size):
@@ -238,12 +241,21 @@ class ResultsRecordPerTask(object):
 
     self.step_time += step_time
     self.grad_norm += results.grad_norm
+    for key in ['binary_gap']:
+      if hasattr(results, key):
+        if not hasattr(self, key):
+          setattr(self, key, 0)
+        setattr(self, key, getattr(self, key) + getattr(results, key))
     if below_curriculum:
       self.loss += results.loss
       err, tot, seq_err = results.accuracy()
       self.err += err
       self.seq_err += seq_err
       self.total += tot
+
+  @property
+  def avg_binary_gap(self):
+    return self.binary_gap / self.num_batches
 
   @property
   def avg_step_time(self):

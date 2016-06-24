@@ -175,9 +175,6 @@ class NeuralGPUAtSize(object):
 
     self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
 
-    if FLAGS.do_binarization:
-      self.binary_gap = None
-
     self.initializer = VariableInitializer()
     self.construct_graph(adam)
 
@@ -233,14 +230,6 @@ class NeuralGPUAtSize(object):
         else:
           cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup',
                           self.initializer, nconvs)
-
-        if FLAGS.do_binarization:
-          dists_from_binary = 1 - tf.abs(2*cur - 1)
-          total_dist = tf.reduce_sum(dists_from_binary, [-1,-2,-3])
-          if self.binary_gap is None:
-            self.binary_gap = total_dist
-          else:
-            self.binary_gap += total_dist
 
         if FLAGS.do_batchnorm:
           if FLAGS.do_batchnorm == 1:
@@ -308,6 +297,9 @@ class NeuralGPUAtSize(object):
     # Final loss: cross-entropy + shared parameter relaxation part.
     relax_dist, self.model.avg_op = relaxed_distance(self.config.rx_step)
     total_loss = perp_loss + relax_dist * self.model.pull
+    if FLAGS.do_binarization:
+      self.binary_gap = tf.reduce_mean(1 - tf.abs(self.layers))
+      total_loss += self.binary_gap * FLAGS.do_binarization
     self.loss = perp_loss
 
     # Gradients and Adam update operation.
@@ -356,6 +348,8 @@ class NeuralGPUAtSize(object):
       feed_out['grad_norm'] = self.grad_norm
     if get_steps:
       feed_out['layers'] = self.layers
+    if FLAGS.do_binarization:
+      feed_out['binary_gap'] = self.binary_gap
     feed_out['loss'] = self.loss
     feed_out['layer_outputs'] = self.layer_outputs
     feed_out['output'] = self.output
