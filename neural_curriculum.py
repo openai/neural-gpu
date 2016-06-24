@@ -132,7 +132,7 @@ class NeuralGPUResult(object):
   back_update = None
   loss = None
   output = None
-  step = None
+  layers = None
   attention = None
 
   def __init__(self, vals, inp, target, taskid):

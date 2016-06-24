@@ -175,6 +175,9 @@ class NeuralGPUAtSize(object):
 
     self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
 
+    if FLAGS.do_binarization:
+      self.binary_gap = None
+
     self.initializer = VariableInitializer()
     self.construct_graph(adam)
 
@@ -231,12 +234,21 @@ class NeuralGPUAtSize(object):
           cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup',
                           self.initializer, nconvs)
 
+        if FLAGS.do_binarization:
+          dists_from_binary = 1 - tf.abs(2*cur - 1)
+          total_dist = tf.reduce_sum(dists_from_binary, [-1,-2,-3])
+          if self.binary_gap is None:
+            self.binary_gap = total_dist
+          else:
+            self.binary_gap += total_dist
+
         if FLAGS.do_batchnorm:
           if FLAGS.do_batchnorm == 1:
             cur = mytf.batch_norm(cur, self.do_training, scope='bn')
           elif FLAGS.do_batchnorm == 2:
             cur = mytf.batch_norm(cur, self.do_training, mask, scope='bn')
           cur = cur * mask
+
 
         layers.append(cur)
 
@@ -259,8 +271,11 @@ class NeuralGPUAtSize(object):
 
     # First image comes from start by applying one convolution and adding 0s.
     # first: batch_size x length x height x nmaps
-    first = conv_linear(start,
-                        1, 1, vec_size, nmaps, True, 0.0, "input", self.initializer)
+    if FLAGS.original_non_binary:
+      first = conv_linear(start,
+                          1, 1, vec_size, nmaps, True, 0.0, "input", self.initializer)
+    else:
+      first = start
     first = tf.concat(2, [first] + [tf.zeros_like(first[:,:,:1,:])]*(height - 1)) * mask
 
     return first
