@@ -366,9 +366,10 @@ class NeuralGPU(object):
 
     # Feeds for parameters and ops to update them.
     self.global_step = tf.Variable(0, trainable=False)
-    self.lr = float(config.lr)
-
-    self.pull = float(config.pull)
+    self.lr = tf.Variable(float(config.lr), trainable=False)
+    self.lr_decay_op = self.lr.assign(self.lr * 0.98)
+    self.pull = tf.Variable(float(config.pull), trainable=False)
+    self.pull_incr_op  self.pull.assign(self.pull * config.pull_incr)
 
     # Feeds for inputs, targets, outputs, losses, etc.
     self.instances = []

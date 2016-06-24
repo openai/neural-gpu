@@ -281,10 +281,8 @@ class Timer(object):
 
 def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
   curriculum = model.curriculum
-  global_step, = sess.run( [model.global_step])
   results_record = neural_curriculum.ResultsRecord(batch_size)
   for _ in xrange(nsteps):
-    global_step += 1
 
     batch, within_bounds = model.curriculum.draw_example(batch_size)
 
@@ -295,10 +293,11 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
     # Accumulate statistics only if we did not exceed curriculum length.
     results_record.feed(result, time.time() - start_time, within_bounds)
 
+  global_step, lr, pull = sess.run( [model.global_step, model.lr, model.pull])
   # Normalize and print out accumulated statistics.
   message = ('step %s ' % (global_step, ) +
              'len %s ' % curriculum.length_str +
-             'lr %.8f pull %.3f ' % (model.lr, model.pull) +
+             'lr %.8f pull %.3f ' % (lr, pull) +
              '%s' % str(results_record)
   )
   data.print_out(message)
@@ -312,21 +311,21 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
   # If errors are below the curriculum threshold, move curriculum forward.
   if decent:
     # Either increase pull or, if it's large, average parameters.
-    if model.pull < 0.1:
-      model.pull *= model.config.pull_incr
+    if pull < 0.1:
+      sess.run(model.pull_incr_op)
     else:
       data.print_out("  Averaging parameters.")
       sess.run(model.avg_op)
       # XXX this used to exist, but it doesn't really make sense
       #if results_record.values()[0].avg_seq_err < (model.config.curriculum_bound / 3.0):
-      #  model.lr *= 0.98
+      #  sess.run(model.lr_decay_op)
 
   # Lower learning rate if we're worse than the last 3 checkpoints.
   # XXX improve this in a mixed setting
   acc_perp = data.safe_exp(results_record.record_for_task[0].avg_loss)
   if acc_perp > thresh:
     data.print_out("Lower learning rate: %s %s" % (acc_perp, thresh))
-    model.lr *= 0.98
+    sess.run(model.lr_decay_op)
   return (extended, acc_perp)
 
 def run_evaluation(sess, model, batch_size):
