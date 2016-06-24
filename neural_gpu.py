@@ -298,7 +298,8 @@ class NeuralGPUAtSize(object):
     relax_dist, self.model.avg_op = relaxed_distance(self.config.rx_step)
     total_loss = perp_loss + relax_dist * self.model.pull
     if FLAGS.do_binarization:
-      self.binary_gap = tf.reduce_mean(1 - tf.abs(self.layers))
+      binary_gaps = 1 - tf.abs(self.layers)
+      self.binary_gap = tf.reduce_mean(binary_gaps * mask) / tf.reduce_mean(mask)
       total_loss += self.binary_gap * FLAGS.do_binarization
     self.loss = perp_loss
 

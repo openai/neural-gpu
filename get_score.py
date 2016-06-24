@@ -18,6 +18,7 @@ RESULT='score'
 parser.add_argument("--key", type=str, default=RESULT)
 parser.add_argument("--task", type=str, default='plot')
 parser.add_argument("--title", type=str, default='')
+parser.add_argument("--one-legend", type=bool, default=True)
 parser.add_argument("--median", action='store_true')
 parser.add_argument("--smoothing", type=int, default='1')
 parser.add_argument('files', type=str, nargs='+',
@@ -201,7 +202,8 @@ if __name__ == '__main__':
                 pylab.subplot(len(keys), len(all_tasks), ki*len(all_tasks) + i+1)
                 plot_start(key)
                 plot_all(plot_results, scores, column=key, taskset = [task])
-                pylab.legend(loc=legend_locs.get(key, 0))
+                if not args.one_legend or (ki == len(keys)-1 and i == len(all_tasks)-1):
+                    pylab.legend(loc=legend_locs.get(key, 0))
                 pylab.title('Task %s' % task)
                 pylab.ylim((0, None))
                 pylab.xlim((0,None))
