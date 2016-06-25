@@ -231,8 +231,8 @@ class NeuralGPUAtSize(object):
 
         if FLAGS.do_shifter:
           # shape: bs x length x height x height
-          indices = conv_linear(cur, kw, kh, nmaps, height, False, 0.0,
-                                "indices", initializer)
+          indices = conv_linear(cur, kw, kh, nmaps, self.config.height, False, 0.0,
+                                "indices", self.initializer)
 
           cur = indexer_block(cur, indices)
           
