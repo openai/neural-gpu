@@ -119,6 +119,6 @@ def softmax_index2d(indices, values):
     tf.nn.softmax(
       tf.reshape(indices, [-1, indices_shape[-1]*indices_shape[-2]])),
     indices_shape)
-  softmax_indices = tf.cast(softmax_indices, tf.complex64)
-  values = tf.cast(values, tf.complex64)
+  softmax_indices = tf.complex(softmax_indices, tf.zeros_like(softmax_indices))
+  values = tf.complex(values, tf.zeros_like(values))
   return tf.real(tf.batch_ifft2d(tf.conj(tf.batch_fft2d(softmax_indices)) * tf.batch_fft2d(values)))

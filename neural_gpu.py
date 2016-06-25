@@ -161,16 +161,16 @@ def indexer_block(cur, indices):
   # cur shape: bs x length x height(in) x nmaps
   # indices shape: bs x length x height(in) x height(out)
 
-  # shape: bs x height(out) x length x height(in)
-  indices = tf.transpose(indices, [0,3,1,2])
-  # shape: bs x height(out) x 1 x length x height(in)
-  indices = tf.expand_dims(indices, 2)
-  # shape: bs x 1 x nmaps x length x height(in)
-  expanded_cur = tf.transpose(tf.expand_dims(cur, 1), [0,1,4,2,3])
-  # shape: bs x height(out) x nmaps x length x height(in)
+  # shape: height(out) x bs x length x height(in)
+  indices = tf.transpose(indices, [3,0,1,2])
+  # shape: height(out) x 1 x bs x length x height(in)
+  indices = tf.expand_dims(indices, 1)
+  # shape: 1 x nmaps x bs x length x height(in)
+  expanded_cur = tf.transpose(tf.expand_dims(cur, 0), [0,4,1,2,3])
+  # shape: height(out) x nmaps x bs x length x height(in)
   convolved = mytf.softmax_index2d(indices, expanded_cur)
   # shape: bs x length x height(out) x nmaps
-  return tf.transpose(convolved[:,:,:,:,0], [0,3,1,2])
+  return tf.transpose(convolved[:,:,:,:,0], [2,3,0,1])
 
 class NeuralGPUAtSize(object):
   """Instantiate the NeuralGPU at a given block size."""
@@ -289,7 +289,8 @@ class NeuralGPUAtSize(object):
                           1, 1, vec_size, nmaps, True, 0.0, "input", self.initializer)
     else:
       first = start
-    first = tf.concat(2, [first] + [tf.zeros_like(first[:,:,:1,:])]*(height - 1)) * mask
+    padding_height = height - mytf.shape_list(first)[2]
+    first = tf.concat(2, [first] + [tf.zeros_like(first[:,:,:1,:])]*padding_height) * mask
 
     return first
 
