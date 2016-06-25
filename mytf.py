@@ -110,3 +110,15 @@ def print_bn_state(sess, nmaps):
     result = sess.run(d, {})
     for v in var_list:
         print v, result[v]
+
+#numpy.fft.ifft(numpy.conj(numpy.fft.fft(a)) * numpy.fft.fft(b)).round(3)
+
+def softmax_index2d(indices, values):
+  indices_shape = shape_list(indices)
+  softmax_indices = tf.reshape(
+    tf.nn.softmax(
+      tf.reshape(indices, [-1, indices_shape[-1]*indices_shape[-2]])),
+    indices_shape)
+  softmax_indices = tf.cast(softmax_indices, tf.complex64)
+  values = tf.cast(values, tf.complex64)
+  return tf.real(tf.batch_ifft2d(tf.conj(tf.batch_fft2d(softmax_indices)) * tf.batch_fft2d(values)))

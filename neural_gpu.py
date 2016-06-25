@@ -157,6 +157,21 @@ def relaxed_distance(rx_step):
       ops.append(v.assign(rx_done[rx_name]))
   return tf.add_n(res), tf.group(*ops)
 
+def indexer_block(cur, indices):
+  # cur shape: bs x length x height(in) x nmaps
+  # indices shape: bs x length x height(in) x height(out)
+
+  # shape: bs x height(out) x length x height(in)
+  indices = tf.transpose(indices, [0,3,1,2])
+  # shape: bs x height(out) x 1 x length x height(in)
+  indices = tf.expand_dims(indices, 2)
+  # shape: bs x 1 x nmaps x length x height(in)
+  expanded_cur = tf.transpose(tf.expand_dims(cur, 1), [0,1,4,2,3])
+  # shape: bs x height(out) x nmaps x length x height(in)
+  convolved = mytf.softmax_index2d(indices, expanded_cur)
+  # shape: bs x length x height(out) x nmaps
+  return tf.transpose(convolved[:,:,:,:,0], [0,3,1,2])
+
 class NeuralGPUAtSize(object):
   """Instantiate the NeuralGPU at a given block size."""
   def __init__(self, model, length, adam):
@@ -214,6 +229,14 @@ class NeuralGPUAtSize(object):
           vs.reuse_variables()
         cur = tf.nn.dropout(cur, keep_prob)
 
+        if FLAGS.do_shifter:
+          # shape: bs x length x height x height
+          indices = conv_linear(cur, kw, kh, nmaps, height, False, 0.0,
+                                "indices", initializer)
+
+          cur = indexer_block(cur, indices)
+          
+
         if FLAGS.num_attention:
           k = FLAGS.num_attention
           blocks = tf.pack([cur]*(2*k+1))
@@ -230,6 +253,7 @@ class NeuralGPUAtSize(object):
         else:
           cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup',
                           self.initializer, nconvs)
+
 
         if FLAGS.do_batchnorm:
           if FLAGS.do_batchnorm == 1:
