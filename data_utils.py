@@ -101,7 +101,7 @@ class OpGenerator(DataGenerator):
     self.sep = sep
 
   def is_valid_length(self, l):
-    return l%2 == 1 and l > 1
+    return l%2 == 1 and l > 3
 
   def _rand_inputs(self, k):
     k = int(k)

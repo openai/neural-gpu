@@ -235,7 +235,7 @@ class NeuralGPUAtSize(object):
         if (FLAGS.do_shifter == 1 or
             (FLAGS.do_shifter == 2 and it == 0) or
             (FLAGS.do_shifter == 3 and it % 10 == 0) or
-            Flags.do_shifter > 3):
+            FLAGS.do_shifter > 3):
           # shape: bs x length x height x height
           if FLAGS.do_shifter == 4:
             first = tf.to_float(self.input == 21)

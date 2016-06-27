@@ -16,7 +16,7 @@ class NeuralConfig(object):
       val = kws.get(key, getattr(FLAGS, key, None))
       setattr(self, key, val)
 
-    min_length = 3
+    min_length = 5
     max_length = min(FLAGS.max_length, data_utils.bins[-1])
     assert max_length + 1 > min_length
     self.max_length = max_length
