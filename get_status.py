@@ -33,6 +33,11 @@ def load_log(dir):
         return None
     step_lines = [x for x in lines if x.startswith('step ')]
     if not step_lines:
+        fname = '%s/log0' % dir
+        try:
+            lines = open(fname).readlines()
+        except IOError:
+            return None
         return lines[-1].strip()
     else:
         data = step_lines[-1].split()
@@ -81,7 +86,7 @@ class Results(object):
         if vals:
             answer = collections.OrderedDict()
             for key in vals[0]:
-                table = [list(map(float, v[key].split('/'))) for v in vals]
+                table = [list(map(float, v.get(key, 'nan').split('/'))) for v in vals]
                 min_length = min(map(len, table))
                 table = [row[:min_length] for row in table]
                 answer[key] = np.median(table, axis=0)
