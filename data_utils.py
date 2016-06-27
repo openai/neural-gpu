@@ -73,8 +73,8 @@ class DataGenerator(object):
   def rand_pair_padded(self, length):
     pad_length = pad(length)
     data = self.rand_pair(length)
-    return [np.concatenate([x, np.zeros(x.shape[:-1] + (pad_length - x.shape[-1],))],
-                           axis=-1)
+    return [np.concatenate([x, np.zeros((pad_length - x.shape[0],) + x.shape[1:])],
+                           axis=0)
             for x in data]
 
   def get_batch(self, length, batch_size):
@@ -170,7 +170,7 @@ class AlignedOpGenerator(OpGenerator):
     else:
       o = to_base(result, self.base) + 1
     outp = np.pad(o, (0, preferred_length - len(o)), 'constant')
-    return inp2, outp
+    return inp2.transpose(), outp
 
 class AlignedToughAddGenerator(AlignedOpGenerator, ToughAddGenerator):
   pass

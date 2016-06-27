@@ -180,8 +180,8 @@ class NeuralGPUAtSize(object):
   def __init__(self, model, length, adam):
     self.config = model.config
     self.length = length
-    # batch_size x length
-    self.input = tf.placeholder(tf.int32, shape=(None,self.config.input_height,length),
+    # batch_size x length x height
+    self.input = tf.placeholder(tf.int32, shape=(None,length, self.config.input_height),
                                 name="input{0}".format(length))
     self.target = tf.placeholder(tf.int32, shape=(None,length), name="target{0}".format(length))
     #tf.concat(1, [tf.reshape(i, [-1, 1]) for i in model.target[:length]])
@@ -199,7 +199,7 @@ class NeuralGPUAtSize(object):
   def construct_mask(self) :
     # Mask to 0-out padding space in each step.
     # bmask: batch_size x length
-    bmask = tf.reduce_any(self.input > 0, 1) | (self.target > 0)
+    bmask = tf.reduce_any(self.input > 0, 2) | (self.target > 0)
     # mask: batch x length x 1 x 1
     mask = tf.to_float(mytf.expand_dims_by_k(bmask, 2))
 
@@ -235,16 +235,15 @@ class NeuralGPUAtSize(object):
         if (FLAGS.do_shifter == 1 or
             (FLAGS.do_shifter == 2 and it == 0) or
             (FLAGS.do_shifter == 3 and it % 10 == 0) or
-            FLAGS.do_shifter > 3):
+            (FLAGS.do_shifter == 4 and it == 0)
+            ):
           # shape: bs x length x height x height
           if FLAGS.do_shifter == 4:
-            first = tf.to_float(self.input == 21)
-            second = tf.to_float(self.input == 11)
-            preferred_indices = tf.one_hot([0, ], self.length)
-            zero_index = tf.zeros_like(cur[:,:,:,:1])
-            zero_block = tf.concat(3, [zero_index] * self.config.height)
-            zero_block[:,0,0,1:] = 1.
-            
+            # shape: bs x length x height
+            first = tf.to_float(tf.equal(self.input, 21)) * 1e5
+            second = tf.to_float(tf.equal(self.input, 11)) * 1e5
+            rest = first * 0.
+            indices = mytf.stack([first, second] + [rest]*(self.config.height - 2), 3)
           else:
             # indices shape: bs x length x height(in) x height(out)
             indices = conv_linear(cur, kw, kh, nmaps, self.config.height, False, 0.0,
@@ -295,8 +294,8 @@ class NeuralGPUAtSize(object):
     with tf.control_dependencies([self.e0]):
       embedded = tf.nn.embedding_lookup(self.emb_weights, self.input)
 
-    # start: batch_size x length x 1 x nmaps
-    start = tf.tanh(tf.transpose(embedded, [0,2,1,3]))
+    # start: batch_size x length x input_height x nmaps
+    start = tf.tanh(embedded)
 
     # First image comes from start by applying one convolution and adding 0s.
     # first: batch_size x length x height x nmaps
@@ -371,13 +370,13 @@ class NeuralGPUAtSize(object):
     """Run a step of the network."""
     inp, target, taskid = batch
     assert inp.shape[0] == target.shape[0]
-    assert inp.shape[-1] == target.shape[-1]
+    assert inp.shape[1] == target.shape[1]
     if len(inp.shape) == 2:
-      inp = np.expand_dims(inp, 1)
+      inp = np.expand_dims(inp, 2)
     assert len(inp.shape) == 3
-    if inp.shape[1] < self.config.input_height:
-      extra = self.config.input_height - inp.shape[1]
-      inp = np.concatenate([inp] + [np.zeros_like(inp[:,:1,:])]*extra, axis=1)
+    if inp.shape[2] < self.config.input_height:
+      extra = self.config.input_height - inp.shape[2]
+      inp = np.concatenate([inp] + [np.zeros_like(inp[:,:,:1])]*extra, axis=2)
     feed_in = {}
     feed_in[self.do_training] = do_backward
     feed_in[self.task] = taskid

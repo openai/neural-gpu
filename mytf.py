@@ -3,6 +3,9 @@ import tensorflow as tf
 from tensorflow.python.training import moving_averages
 import functools
 
+def stack(tensor_list, ax):
+  return tf.concat(ax, [tf.expand_dims(t, ax) for t in tensor_list])
+
 def shape_list(tensor):
   """Return the tensor shape in a form tf.reshape understands."""
   return [x or -1 for x in tensor.get_shape().as_list()]

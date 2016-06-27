@@ -21,6 +21,7 @@ class NeuralConfig(object):
     assert max_length + 1 > min_length
     self.max_length = max_length
     self.min_length = min_length
+    self.input_height = self.height
 
   def __str__(self):
     msg1 = ("layers %d kw %d h %d kh %d relax %d batch %d noise %.2f task %s"
@@ -149,7 +150,7 @@ class NeuralGPUResult(object):
 
   @property
   def length(self):
-    return (self.input[0,0,:] > 0).sum()
+    return (self.input[0,:,0] > 0).sum()
 
   @property
   def batch_size(self):
@@ -166,10 +167,10 @@ class NeuralGPUResult(object):
   def to_string(self, i=None):
     if i is None:
       return '\n'.join(self.to_string(i) for i in range(self.batch_size))
-    input_symbols = data_utils.to_string(self.input[i].astype(int))
+    input_symbols = data_utils.to_string(self.input[i].transpose().astype(int))
     output_symbols = data_utils.to_string(self.output[i,:self.length,:].argmax(axis=-1)).rstrip(' 0')
     target_symbols = data_utils.to_string(self.target[i,:self.length].astype(int))
-    inp_str = (input_symbols if self.input.shape[1] > 1 else
+    inp_str = (input_symbols if self.input.shape[2] > 1 else
                '%s\n%s' % (input_symbols[:self.length//2+1],
                            input_symbols[self.length//2+1:]))
     return '%s=\n%s %s\n%s' % (input_symbols,
