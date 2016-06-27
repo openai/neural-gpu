@@ -165,7 +165,10 @@ class AlignedOpGenerator(OpGenerator):
     pad_n2[len(n2)] = self.sep
     inp2 = np.vstack([pad_n1, pad_n2])
     #XXX cheating on length here
-    o = np.concatenate([[21], to_base(result, self.base, l-1) + 1])
+    if False:
+      o = np.concatenate([[21], to_base(result, self.base, l-1) + 1])
+    else:
+      o = to_base(result, self.base) + 1
     outp = np.pad(o, (0, preferred_length - len(o)), 'constant')
     return inp2, outp
 
