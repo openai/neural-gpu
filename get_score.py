@@ -83,7 +83,7 @@ class Scores(object):
                 task = self.dfs.keys()[0]
             if task not in self.dfs:
                 return None
-            return self.dfs[task][key]
+            return self.dfs[task].get(key)
 
     def _load_results(self):
         if self.result_dfs:
@@ -121,6 +121,9 @@ def plot_start(key):
         pylab.ylabel('Sequence error on large input')
 
 def plot_results(fname, frame):
+    if frame is None: #Just put in legend
+        pylab.plot([], label=get_name(fname), marker='o')
+        return
     x = frame.index
     ysets = list(frame.T.values)
     if args.smoothing > 1:
@@ -175,6 +178,7 @@ def plot_all(func, scores, column=None, taskset=None):
                        for score in d[key]]
             data = pd.DataFrame([c for c in columns if c is not None and len(c) > 1]).T
             if not len(data):
+                func(score.args_str(), None)
                 continue
             data.loc[data.first_valid_index()] = data.loc[data.first_valid_index()].fillna(1)
             data = data.interpolate(method='nearest')

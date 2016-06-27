@@ -156,15 +156,16 @@ generators.update(dict(baddt=ToughAddGenerator(2, 11),
 
 class AlignedOpGenerator(OpGenerator):
   def rand_pair(self, l):
-    k = int((l-1)//2)
+    k = int((l-3)//2)
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
-    n1, n2 = [to_base(n, self.base, k) + 1 for n in [n1,n2]]
+    n1, n2 = [np.concatenate([[21], to_base(n, self.base, k) + 1, [22]]) for n in [n1,n2]]
     preferred_length = l#max(len(n1), len(n2))+1
     pad_n1, pad_n2 = [np.pad(n,(0, preferred_length-len(n)), 'constant') for n in (n1, n2)]
     pad_n2[len(n2)] = self.sep
     inp2 = np.vstack([pad_n1, pad_n2])
-    o = to_base(result, self.base) + 1  #XXX cheating on length here
+    #XXX cheating on length here
+    o = np.concatenate([[21], to_base(result, self.base, l-1) + 1])
     outp = np.pad(o, (0, preferred_length - len(o)), 'constant')
     return inp2, outp
 
