@@ -34,7 +34,7 @@ all_tasks = ["sort", "kvsort", "id", "rev", "rev2", "incr", "add", "left",
 forward_max = 128
 log_filename = ""
 
-PADDING = False
+PADDING = True
 
 
 def pad(l):
