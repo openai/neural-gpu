@@ -157,7 +157,7 @@ def relaxed_distance(rx_step):
       ops.append(v.assign(rx_done[rx_name]))
   return tf.add_n(res), tf.group(*ops)
 
-def indexer_block(cur, indices):
+def indexer_block2(cur, indices):
   # cur shape: bs x length x height(in) x nmaps
   # indices shape: bs x length x height(in) x height(out)
 
@@ -174,6 +174,15 @@ def indexer_block(cur, indices):
   convolved = mytf.softmax_index2d(indices, expanded_cur, True)
   # shape: bs x length x height(out) x nmaps
   return tf.transpose(convolved, [2,3,0,1])
+
+def indexer_block1(cur, indices):
+  # cur shape: bs x length x height(in) x nmaps
+  # indices shape: bs x length x height(out)
+  cur2 = tf.transpose(cur, [0,2,3,1])
+  indices2 = tf.transpose(cur, [0,2,1])
+  # shape: bs x height(in) x nmaps x length
+  convolved = mytf.softmax_index1d(indices, cur2)
+  return tf.transpose(convolved, [0,3,1,2])
 
 class NeuralGPUAtSize(object):
   """Instantiate the NeuralGPU at a given block size."""
@@ -249,7 +258,7 @@ class NeuralGPUAtSize(object):
             indices = conv_linear(cur, kw, kh, nmaps, self.config.height, False, 0.0,
                                   "indices", self.initializer)
           self.indices = indices
-          cur = indexer_block(cur, indices)
+          cur = indexer_block2(cur, indices)
           
 
         if FLAGS.num_attention:

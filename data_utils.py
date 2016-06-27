@@ -168,7 +168,8 @@ class AlignedOpGenerator(OpGenerator):
     if False:
       o = np.concatenate([[21], to_base(result, self.base, l-1) + 1])
     else:
-      o = to_base(result, self.base) + 1
+      #o = to_base(result, self.base) + 1
+      o = to_base(result, self.base, k+2) + 1
     outp = np.pad(o, (0, preferred_length - len(o)), 'constant')
     return inp2.transpose(), outp
 

@@ -129,3 +129,13 @@ def softmax_index2d(indices, values, reduce = False):
     return tf.reduce_mean(tf.real(tf.batch_ifft(fft_of_answer)), -2)
   else:
     return tf.real(tf.batch_ifft2d(fft_of_answer))
+
+def softmax_index1d(indices, values):
+  # indices: bs x height x length 
+  # values: stuff x bs x height x length
+  indices_shape = shape_list(indices)
+  softmax_indices = softmax(indices)
+  softmax_indices = tf.complex(softmax_indices, tf.zeros_like(softmax_indices))
+  values = tf.complex(values, tf.zeros_like(values))
+  fft_of_answer = tf.conj(tf.batch_fft(softmax_indices)) * tf.batch_fft(values)
+  return tf.real(tf.batch_ifft(fft_of_answer))
