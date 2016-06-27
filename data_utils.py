@@ -34,6 +34,8 @@ all_tasks = ["sort", "kvsort", "id", "rev", "rev2", "incr", "add", "left",
 forward_max = 128
 log_filename = ""
 
+PADDING = False
+
 
 def pad(l):
   for b in bins + [forward_max]:
@@ -110,16 +112,16 @@ class OpGenerator(DataGenerator):
     return (n1, n2)
 
   def rand_pair(self, l):
-    k = int((l-3)//2)
+    k = int((l-1 - 2*PADDING)//2)
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
-    inp = np.concatenate([[21],
+    inp = np.concatenate([[21] if PADDING else [],
        to_base(n1, self.base, k) + 1,
        [self.sep],
-       to_base(n2, self.base, k) + 1, [22]])
-    outp = np.concatenate([[21],
+                          to_base(n2, self.base, k) + 1, [22] if PADDING else []])
+    outp = np.concatenate([[21] if PADDING else [],
             to_base(result, self.base, 2*k+1) + 1,
-                           [22]])
+                           [22] if PADDING else []])
     return inp, outp
 
 generators.update(dict(badd=OpGenerator(2, operator.add, 11),
@@ -156,17 +158,19 @@ generators.update(dict(baddt=ToughAddGenerator(2, 11),
 
 class AlignedOpGenerator(OpGenerator):
   def rand_pair(self, l):
-    k = int((l-3)//2)
+    k = int((l-1 - 2*PADDING)//2)
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
-    n1, n2 = [np.concatenate([[21], to_base(n, self.base, k) + 1, [22]]) for n in [n1,n2]]
+    n1, n2 = [np.concatenate([[21] if PADDING else [],
+                              to_base(n, self.base, k) + 1,
+                              [22] if PADDING else []]) for n in [n1,n2]]
     preferred_length = l#max(len(n1), len(n2))+1
     pad_n1, pad_n2 = [np.pad(n,(0, preferred_length-len(n)), 'constant') for n in (n1, n2)]
     pad_n2[len(n2)] = self.sep
     inp2 = np.vstack([pad_n1, pad_n2])
     #XXX cheating on length here
     if False:
-      o = np.concatenate([[21], to_base(result, self.base, l-1) + 1])
+      o = np.concatenate([[21] if PADDING else [], to_base(result, self.base, l-1) + 1])
     else:
       #o = to_base(result, self.base) + 1
       o = to_base(result, self.base, k+2) + 1
