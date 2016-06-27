@@ -64,7 +64,7 @@ class Results(object):
     def _parse_logs(self):
         if hasattr(self, 'results'):
             return
-        dirs = glob.glob('logs/%s/*' % self.label)
+        dirs = glob.glob('cachedlogs/%s/*' % self.label)
         self.results = [load_log(dir) for dir in dirs]
 
     def _running_programs(self):
