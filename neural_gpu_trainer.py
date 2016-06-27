@@ -83,7 +83,7 @@ def define_flags():
   tf.app.flags.DEFINE_bool("original_non_binary", False, "Use an initial convolution that makes everything escape [0,1].")
 
   tf.app.flags.DEFINE_float("do_binarization", 0.0, "Penalty for non-binary activations")
-  tf.app.flags.DEFINE_bool("do_shifter", False, "Whether shift stuff at each layer.")
+  tf.app.flags.DEFINE_int("do_shifter", 0, "Whether shift stuff at each layer.")
 
   tf.app.flags.DEFINE_bool("do_lastout", False, "Whether to use last output.")
   tf.app.flags.DEFINE_bool("do_layers", False, "Expose output for all layers.")

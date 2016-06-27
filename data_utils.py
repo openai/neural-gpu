@@ -110,13 +110,16 @@ class OpGenerator(DataGenerator):
     return (n1, n2)
 
   def rand_pair(self, l):
-    k = int((l-1)//2)
+    k = int((l-3)//2)
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
-    inp = np.concatenate([to_base(n1, self.base, k) + 1,
-                          [self.sep],
-                          to_base(n2, self.base, k) + 1])
-    outp = to_base(result, self.base, 2*k+1) + 1
+    inp = np.concatenate([[21],
+       to_base(n1, self.base, k) + 1,
+       [self.sep],
+       to_base(n2, self.base, k) + 1, [22]])
+    outp = np.concatenate([[21],
+            to_base(result, self.base, 2*k+1) + 1,
+                           [22]])
     return inp, outp
 
 generators.update(dict(badd=OpGenerator(2, operator.add, 11),

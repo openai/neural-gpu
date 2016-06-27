@@ -5,6 +5,7 @@ import subprocess
 import collections
 import sys
 import threading
+import os
 
 import yaml
 import numpy as np
@@ -22,7 +23,10 @@ def get_states():
                 continue # legacy formats
             yield state
 
-def load_log(fname):
+def load_log(dir):
+    fname = '%s/steps' % dir
+    if not os.path.exists(fname):
+        fname = '%s/log0' % dir
     try:
         lines = open(fname).readlines()
     except IOError:
@@ -56,7 +60,7 @@ class Results(object):
         if hasattr(self, 'results'):
             return
         dirs = glob.glob('logs/%s/*' % self.label)
-        self.results = [load_log('%s/log0' % dir) for dir in dirs]
+        self.results = [load_log(dir) for dir in dirs]
 
     def _running_programs(self):
         if hasattr(self, 'dead'):

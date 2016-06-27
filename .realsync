@@ -13,7 +13,7 @@
 local = .
 
 # Remote host to replicate to over SSH.
-host = 11.cirrascale.sci.openai-tech.com
+host = 11.cirrascale.sci.openai.org
 
 # User to connect to the remote host.
 user = ecprice

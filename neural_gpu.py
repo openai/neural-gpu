@@ -161,16 +161,19 @@ def indexer_block(cur, indices):
   # cur shape: bs x length x height(in) x nmaps
   # indices shape: bs x length x height(in) x height(out)
 
-  # shape: height(out) x bs x length x height(in)
-  indices = tf.transpose(indices, [3,0,1,2])
-  # shape: height(out) x 1 x bs x length x height(in)
+  # shape: height(out) x bs x height(in) x length
+  indices = tf.transpose(indices, [3,0,2,1])
+  # shape: height(out) x 1 x bs x height(in) x length
   indices = tf.expand_dims(indices, 1)
-  # shape: 1 x nmaps x bs x length x height(in)
-  expanded_cur = tf.transpose(tf.expand_dims(cur, 0), [0,4,1,2,3])
-  # shape: height(out) x nmaps x bs x length x height(in)
-  convolved = mytf.softmax_index2d(indices, expanded_cur)
+  # shape: 1 x nmaps x bs x height(in) x length
+  expanded_cur = tf.expand_dims(tf.transpose(cur, [3,0,2,1]), 0)
+  # # shape: height(out) x nmaps x bs x length x height(in)
+  # convolved = mytf.softmax_index2d(indices, expanded_cur)
+  # convolved[:,:,:,:,0]
+  # shape: height(out) x nmaps x bs x length
+  convolved = mytf.softmax_index2d(indices, expanded_cur, True)
   # shape: bs x length x height(out) x nmaps
-  return tf.transpose(convolved[:,:,:,:,0], [2,3,0,1])
+  return tf.transpose(convolved, [2,3,0,1])
 
 class NeuralGPUAtSize(object):
   """Instantiate the NeuralGPU at a given block size."""
@@ -229,10 +232,23 @@ class NeuralGPUAtSize(object):
           vs.reuse_variables()
         cur = tf.nn.dropout(cur, keep_prob)
 
-        if FLAGS.do_shifter:
+        if (FLAGS.do_shifter == 1 or
+            (FLAGS.do_shifter == 2 and it == 0) or
+            (FLAGS.do_shifter == 3 and it % 10 == 0) or
+            Flags.do_shifter > 3):
           # shape: bs x length x height x height
-          indices = conv_linear(cur, kw, kh, nmaps, self.config.height, False, 0.0,
-                                "indices", self.initializer)
+          if FLAGS.do_shifter == 4:
+            first = tf.to_float(self.input == 21)
+            second = tf.to_float(self.input == 11)
+            preferred_indices = tf.one_hot([0, ], self.length)
+            zero_index = tf.zeros_like(cur[:,:,:,:1])
+            zero_block = tf.concat(3, [zero_index] * self.config.height)
+            zero_block[:,0,0,1:] = 1.
+            
+          else:
+            # indices shape: bs x length x height(in) x height(out)
+            indices = conv_linear(cur, kw, kh, nmaps, self.config.height, False, 0.0,
+                                  "indices", self.initializer)
 
           cur = indexer_block(cur, indices)
           
