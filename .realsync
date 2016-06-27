@@ -24,6 +24,7 @@ remote = models/neural_gpu
 # Pathname wildcards to be excluded from the replication.
 # Use "*" for any filename character and "**" for any character,
 # including "/" in pathnames.
+exclude = logs
 exclude = .realsync
 exclude = CVS
 exclude = .git
