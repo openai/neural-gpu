@@ -115,7 +115,7 @@ class OpGenerator(DataGenerator):
     k = int((l-1 - 2*PADDING)//2)
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
-    inp = np.concatenate([[21] if PADDING else [],
+    inp = np.concatenate([#[21] if PADDING else [],
        to_base(n1, self.base, k) + 1,
        [self.sep],
                           to_base(n2, self.base, k) + 1,
