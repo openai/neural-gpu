@@ -119,7 +119,7 @@ class OpGenerator(DataGenerator):
        to_base(n1, self.base, k) + 1,
        [self.sep],
                           to_base(n2, self.base, k) + 1, [22] if PADDING else []])
-    outp = np.concatenate([#[21] if PADDING else [],
+    outp = np.concatenate([[21] if PADDING else [],
             to_base(result, self.base, 2*k+1) + 1,
                            #[22] if PADDING else []
     ])

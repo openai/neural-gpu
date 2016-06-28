@@ -178,10 +178,13 @@ def indexer_block2(cur, indices):
 def indexer_block1(cur, indices):
   # cur shape: bs x length x height(in) x nmaps
   # indices shape: bs x length x height(out)
+
+  # Now bs x h x nm x l
   cur2 = tf.transpose(cur, [0,2,3,1])
-  indices2 = tf.transpose(cur, [0,2,1])
+  # and bs x h x 1 x l
+  indices2 = tf.expand_dims(tf.transpose(indices, [0,2,1]), 2)
   # shape: bs x height(in) x nmaps x length
-  convolved = mytf.softmax_index1d(indices, cur2)
+  convolved = mytf.softmax_index1d(indices2, cur2)
   return tf.transpose(convolved, [0,3,1,2])
 
 class NeuralGPUAtSize(object):
@@ -235,6 +238,7 @@ class NeuralGPUAtSize(object):
     cur = first
     layers = [first]
     attention_probs_list = []
+    self.indices = {}
     for it in xrange(self.length):
       with tf.variable_scope("RX%d" % (it % self.config.rx_step)) as vs:
         if it >= self.config.rx_step:
@@ -244,7 +248,10 @@ class NeuralGPUAtSize(object):
         if (FLAGS.do_shifter == 1 or
             (FLAGS.do_shifter == 2 and it == 0) or
             (FLAGS.do_shifter == 3 and it % 10 == 0) or
-            (FLAGS.do_shifter == 4 and it == 0)
+            (FLAGS.do_shifter == 4 and it == 0) or
+            (FLAGS.do_shifter == 5 and it == 1) or
+            (FLAGS.do_shifter == 6) or
+            (FLAGS.do_shifter == 7 and it == 1)
             ):
           # shape: bs x length x height x height
           if FLAGS.do_shifter == 4:
@@ -253,13 +260,25 @@ class NeuralGPUAtSize(object):
             second = tf.to_float(tf.equal(self.input, 11)) * 1e5
             rest = first * 0.
             indices = mytf.stack([first, second] + [rest]*(self.config.height - 2), 3)
+          elif FLAGS.do_shifter == 5:
+            # shape: bs x length
+            first = tf.to_float(tf.equal(self.input[:,:,0], 21)) * 1e5
+            second = tf.to_float(tf.equal(self.input[:,:,0], 11)) * 1e5
+            rest = first
+            # shape: bs x length x height
+            indices = mytf.stack([first, second] + [rest]*(self.config.height - 2), 2)
+          elif FLAGS.do_shifter > 5:
+            indices = mytf.safe_squeeze(conv_linear(cur, kw, kh, nmaps, 1, False, 0.0,
+                                                    "indices", self.initializer), -1)
           else:
             # indices shape: bs x length x height(in) x height(out)
             indices = conv_linear(cur, kw, kh, nmaps, self.config.height, False, 0.0,
                                   "indices", self.initializer)
-          self.indices = indices
-          cur = indexer_block2(cur, indices)
-          
+          self.indices[it] = indices
+          if FLAGS.do_shifter < 5:
+            cur = indexer_block2(cur, indices)
+          else:
+            cur = indexer_block1(cur, indices)
 
         if FLAGS.num_attention:
           k = FLAGS.num_attention
@@ -334,7 +353,10 @@ class NeuralGPUAtSize(object):
     # Final convolution to get logits, list outputs.
     layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "output", self.initializer)
     outputs = mytf.safe_squeeze(layer_output, -2) # (depth+1) x batch x length x noclass
-    output = tf.reduce_sum(outputs[1:,:,:,:] * scales, 0)
+    if FLAGS.do_lastout:
+      output = outputs[-1,:,:,:]
+    else:
+      output = tf.reduce_sum(outputs[1:,:,:,:] * scales, 0)
     self.layer_outputs = mytf.softmax(outputs)
     self.output = mytf.softmax(output) # batch_size x length x noclass
 
