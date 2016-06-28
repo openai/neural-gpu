@@ -252,7 +252,8 @@ class NeuralGPUAtSize(object):
             (FLAGS.do_shifter == 5 and it == 1) or
             (FLAGS.do_shifter == 6) or
             (FLAGS.do_shifter == 7 and it == 1) or
-            (FLAGS.do_shifter == 8 and it == 1)
+            (FLAGS.do_shifter == 8 and it == 1) or
+            (FLAGS.do_shifter > 8)
             ):
           # shape: bs x length x height x height
           if FLAGS.do_shifter == 4:
@@ -268,7 +269,7 @@ class NeuralGPUAtSize(object):
             rest = first
             # shape: bs x length x height
             indices = mytf.stack([first, second] + [rest]*(self.config.height - 2), 2)
-          elif FLAGS.do_shifter == 8:
+          elif FLAGS.do_shifter in (8, 9):
             indices = mytf.safe_squeeze(conv_linear(cur, 1, 1, nmaps, 1, False, 0.0,
                                                     "indices", self.initializer), -1)
           elif FLAGS.do_shifter > 5:
