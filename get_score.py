@@ -19,6 +19,7 @@ parser.add_argument("--key", type=str, default=RESULT)
 parser.add_argument("--task", type=str, default='plot')
 parser.add_argument("--title", type=str, default='')
 parser.add_argument("--one-legend", type=bool, default=True)
+parser.add_argument("--skip-dir", type=bool, default=False)
 parser.add_argument("--median", action='store_true')
 parser.add_argument("--smoothing", type=int, default='1')
 parser.add_argument('files', type=str, nargs='+',
@@ -67,6 +68,11 @@ class Scores(object):
         return (label +
                 (' (%s)' % task if task and len(self.tasknames) > 1 else ''))
 
+    def last_loc(self):
+        options = ([d.index[-1] for d in self.result_dfs.values()] +
+                   [d.index[-1] for d in self.dfs.values()])
+        return max(options or [3])
+
     def get_scores(self, key, task):
         if key == RESULT:
             self._load_results()
@@ -74,7 +80,9 @@ class Scores(object):
                 assert len(self.result_dfs) == 1
                 task = self.result_dfs.keys()[0]
             if task not in self.result_dfs:
-                return None
+                basic = pd.Series([1], name=RESULT)
+                basic.loc[self.last_loc()] = 1
+                return basic
             return self.result_dfs[task]
         else:
             self._load_scores()

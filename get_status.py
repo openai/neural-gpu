@@ -11,6 +11,29 @@ import yaml
 import numpy as np
 
 import click
+import cirrascale.client
+
+def my_gpus(user='ecprice'):
+    d = cirrascale.client.get_gpu_status()
+    gpus = set(g for k in d for g in d[k] for p in g.processes
+                if p.username == user)
+    ans = {}
+    for g in gpus:
+        ans.setdefault(g.host, set()).add(g.index)
+    return ans
+
+def other_gpus(results):
+    used_gpus = my_gpus()
+    known_gpus = {}
+    for r in results:
+        for k in r.locations:
+            known_gpus.setdefault(k, set()).update(r.locations[k])
+    missing = {}
+    for k in used_gpus:
+        here = used_gpus[k] - known_gpus.get(k, set())
+        if here:
+            missing[k] = sorted(list(here))
+    return missing
 
 def get_fnames():
     return glob.glob('servers/*')
@@ -152,6 +175,10 @@ def get_status(verbosity):
             thread.join()
     for result in results:
         result.print_out(verbosity)
+
+    missing_gpus = other_gpus(results)
+    if missing_gpus:
+        print(yaml.safe_dump(dict(other=missing_gpus)))
 
 if __name__ == '__main__':
     get_status()
