@@ -166,13 +166,14 @@ class AlignedOpGenerator(OpGenerator):
     result = self.f(n1, n2)
     n1, n2 = [np.concatenate([[21] if PADDING else [],
                               to_base(n, self.base, k) + 1,
-                              [22] if PADDING else []]) for n in [n1,n2]]
+                              #[22] if PADDING else []
+                             ]) for n in [n1,n2]]
     preferred_length = l#max(len(n1), len(n2))+1
     pad_n1, pad_n2 = [np.pad(n,(0, preferred_length-len(n)), 'constant') for n in (n1, n2)]
     pad_n2[len(n2)] = self.sep
     inp2 = np.vstack([pad_n1, pad_n2])
     #XXX cheating on length here
-    if False:
+    if True:
       o = np.concatenate([[21] if PADDING else [], to_base(result, self.base, l-1) + 1])
     else:
       #o = to_base(result, self.base) + 1
