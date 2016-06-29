@@ -5,6 +5,7 @@ import collections
 import subprocess
 import argparse
 import yaml
+import datetime
 
 import cirrascale.client
 from requests import HTTPError
@@ -118,6 +119,7 @@ def run_opportunistically(param_sets, session_label):
     alt_gpudict = {h : [g.index for g in lst] for (h, lst) in gpudict.items()}
     metadata = dict(locations = alt_gpudict,
                   label = session_label,
+                  date = datetime.datetime.now(),
                   version = get_git_version(),
                   argv = sys.argv,
                   params = map(dict, param_sets),
