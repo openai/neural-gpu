@@ -79,52 +79,61 @@ class VariableInitializer(object):
       #print 'initial scaling %s %s : %s' % (k.op.name, ratio, result[k])
       ops.append(tf.assign(k, k * ratio))
     sess.run(ops)
-
-def conv_linear(arg, kw, kh, nin, nout, do_bias, bias_start, prefix, initializer):
+def conv_linear(arg, kw, kh, nout, prefix, initializer, bias=0):
   """Convolutional linear map."""
+  strides = [1, 1, 1, 1]
+  if isinstance(arg, list):
+    if len(arg) == 1:
+      arg = arg[0]
+    else:
+      arg = tf.concat(-1, arg)
+  nin = mytf.shape_list(arg)[-1]
   with tf.variable_scope(prefix):
     k = tf.get_variable("CvK", [kw, kh, nin, nout])
-    res = mytf.conv2d(arg, k, [1, 1, 1, 1], "SAME")
+    res = mytf.conv2d(arg, k, strides, "SAME")
     initializer.record_variable(k, arg, res)
 
-    if not do_bias: return res
+    if bias is None:
+      return res
     bias_term = tf.get_variable("CvB", [nout],
                                 initializer=tf.constant_initializer(0.0))
-    return res + bias_term + bias_start
+    return res + bias_term + float(bias)
 
-def conv_gru(mem, kw, kh, nmaps, cutoff, prefix, initializer):
+def conv_gru(mem, kw, kh, nmaps, cutoff, prefix, initializer, extras=[]):
   """Convolutional GRU."""
+  # mem shape: bs x length x height x nmaps
   def conv_lin(arg, suffix, bias_start):
-    return conv_linear(arg, kw, kh, nmaps, nmaps, True, bias_start,
-                       prefix + "/" + suffix, initializer)
-  reset = sigmoid_cutoff(conv_lin(mem, "r", 1.0), cutoff)
-  candidate = tanh_cutoff(conv_lin(reset * mem, "c", 0.0), FLAGS.cutoff_tanh)
-  gate = sigmoid_cutoff(conv_lin(mem, "g", 1.0), cutoff)
+    return conv_linear(extras + [arg], kw, kh, nmaps,
+                       prefix + "/" + suffix, initializer, bias=bias_start)
+  reset = sigmoid_cutoff(conv_lin(mem, "r", 1), cutoff)
+  candidate = tanh_cutoff(conv_lin(reset * mem, "c", 0), FLAGS.cutoff_tanh)
+  gate = sigmoid_cutoff(conv_lin(mem, "g", 1), cutoff)
   return gate * mem + (1 - gate) * candidate
 
 def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, initializer, nconvs=2):
   old = cur
   for i in xrange(nconvs):
-    cur = conv_linear(cur, kw, kh, nmaps, nmaps, True, 0.0, "cgru_%d_%s" % (i, suffix),
+    cur = conv_linear(cur, kw, kh, nmaps, "cgru_%d_%s" % (i, suffix),
                       initializer)
     if i == nconvs - 1:
       cur = old + cur
     cur = tf.nn.relu(cur * mask)
   return cur
 
-def lstm_block(cur, kw, kh, nmaps, cutoff, mask, suffix, initializer, nconvs=2):
+def lstm_block(cur, kw, kh, nmaps, cutoff, mask, suffix, initializer, nconvs=2,
+               extras = []):
   # Do nconvs-many CGRU steps.
   for layer in xrange(nconvs):
     cur = conv_gru(cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix),
-                   initializer)
+                   initializer, extras = extras)
     cur *= mask
   return cur
 
-def gru_block(*args):
+def gru_block(*args, **kws):
   if FLAGS.do_resnet:
-    return resnet_block(*args)
+    return resnet_block(*args, **kws)
   else:
-    return lstm_block(*args)
+    return lstm_block(*args, **kws)
 
 def relaxed_average(var_name_suffix, rx_step):
   """Calculate the average of relaxed variables having var_name_suffix."""
@@ -244,14 +253,22 @@ class NeuralGPUAtSize(object):
         if it >= self.config.rx_step:
           vs.reuse_variables()
         cur = tf.nn.dropout(cur, keep_prob)
+        extras = []
+        if FLAGS.global_sum:
+          # bs x 1 x 1 x nmaps
+          basic_global_info = tf.reduce_sum(cur, [1, 2], True)
+          global_info = conv_linear(basic_global_info, 1, 1, FLAGS.global_sum,
+                                    "indices", self.initializer)
+          extras.append(mytf.broadcast_as(global_info, cur, [1,2]))
+
 
         if (FLAGS.do_shifter == 1 or
             (FLAGS.do_shifter == 2 and it == 0) or
-            (FLAGS.do_shifter == 3 and it % 10 == 0) or
+            (FLAGS.do_shifter == 3 and it % 5 == 0) or
             (FLAGS.do_shifter == 4 and it == 0) or
             (FLAGS.do_shifter == 5 and it == 1) or
             (FLAGS.do_shifter == 6) or
-            (FLAGS.do_shifter == 7 and it == 1) or
+            (FLAGS.do_shifter == 7 and it % 5 == 0) or
             (FLAGS.do_shifter == 8 and it == 1) or
             (FLAGS.do_shifter > 8)
             ):
@@ -269,38 +286,22 @@ class NeuralGPUAtSize(object):
             rest = first
             # shape: bs x length x height
             indices = mytf.stack([first, second] + [rest]*(self.config.height - 2), 2)
-          elif FLAGS.do_shifter in (8, 9):
-            indices = mytf.safe_squeeze(conv_linear(cur, 1, 1, nmaps, 1, False, 0.0,
-                                                    "indices", self.initializer), -1)
           elif FLAGS.do_shifter > 5:
-            indices = mytf.safe_squeeze(conv_linear(cur, kw, kh, nmaps, 1, False, 0.0,
-                                                    "indices", self.initializer), -1)
+            indices = mytf.safe_squeeze(conv_linear(cur, 1, 1, 1,
+                                                    "indices", self.initializer,
+                                                    extras=extras), -1)
           else:
             # indices shape: bs x length x height(in) x height(out)
-            indices = conv_linear(cur, kw, kh, nmaps, self.config.height, False, 0.0,
-                                  "indices", self.initializer)
+            indices = conv_linear(cur, 1, 1, self.config.height,
+                                  "indices", self.initializer, extras=extras)
           self.indices[it] = indices
           if FLAGS.do_shifter < 5:
             cur = indexer_block2(cur, indices)
           else:
             cur = indexer_block1(cur, indices)
 
-        if FLAGS.num_attention:
-          k = FLAGS.num_attention
-          blocks = tf.pack([cur]*(2*k+1))
-          result = gru_block(blocks, kw, kh, nmaps, cutoff, mask, 'grublocks',
-                             self.initializer, nconvs)
-          # shape: (2k+1) x bs x length x height x nmaps
-          keys = result[:k,:,:,:,:]
-          vals = result[k:2*k,:,:,:,:]
-          cur_att = result[2*k,:,:,:,:]
-          logits = tf.reduce_sum(keys * cur_att, [-1,-2,-3]) # shape: k x bs
-          attention_probs = tf.transpose(mytf.softmax(tf.transpose(logits))) # shape: k x bs
-          attention_probs_list.append(attention_probs)
-          cur = tf.reduce_sum(mytf.expand_dims_by_k(attention_probs, 3) * vals, 0)
-        else:
-          cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup',
-                          self.initializer, nconvs)
+        cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup',
+                        self.initializer, nconvs, extras=extras)
 
 
         if FLAGS.do_batchnorm:
@@ -320,7 +321,6 @@ class NeuralGPUAtSize(object):
   def _get_first_layer(self, mask):
     """Turn the input into a batch_size x length x height x nmaps tensor"""
     nmaps = self.config.nmaps
-    vec_size = self.config.nmaps
     height = self.config.height
 
     # Embed inputs and calculate mask.
@@ -333,8 +333,7 @@ class NeuralGPUAtSize(object):
     # First image comes from start by applying one convolution and adding 0s.
     # first: batch_size x length x height x nmaps
     if FLAGS.original_non_binary:
-      first = conv_linear(start,
-                          1, 1, vec_size, nmaps, True, 0.0, "input", self.initializer)
+      first = conv_linear(start, 1, 1, nmaps, "input", self.initializer)
     else:
       first = start
     padding_height = height - mytf.shape_list(first)[2]
@@ -356,7 +355,7 @@ class NeuralGPUAtSize(object):
     self.construct_all_layers(first, mask)
 
     # Final convolution to get logits, list outputs.
-    layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, nmaps, noclass, True, 0.0, "output", self.initializer)
+    layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, noclass, "output", self.initializer)
     outputs = mytf.safe_squeeze(layer_output, -2) # (depth+1) x batch x length x noclass
     if FLAGS.do_lastout:
       output = outputs[-1,:,:,:]

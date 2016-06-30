@@ -3,6 +3,22 @@ import tensorflow as tf
 from tensorflow.python.training import moving_averages
 import functools
 
+def broadcast_as(origin, target, axes=None):
+  in_size = shape_list(origin)
+  out_size = shape_list(target)
+  result = []
+  if axes is None:
+    axes = range(len(out_size))
+  for d, (i, o) in enumerate(zip(in_size, out_size)):
+    if i is None or o is None:
+      result.append(1)
+    assert o % i == 0
+    if d in axes:
+      result.append(o//i)
+    else:
+      result.append(1)
+  return tf.tile(origin, result)
+
 def stack(tensor_list, ax):
   return tf.concat(ax, [tf.expand_dims(t, ax) for t in tensor_list])
 
