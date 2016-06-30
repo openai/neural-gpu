@@ -86,7 +86,7 @@ def conv_linear(arg, kw, kh, nout, prefix, initializer, bias=0):
     if len(arg) == 1:
       arg = arg[0]
     else:
-      arg = tf.concat(-1, arg)
+      arg = tf.concat(len(mytf.shape_list(arg[0]))-1, arg)
   nin = mytf.shape_list(arg)[-1]
   with tf.variable_scope(prefix):
     k = tf.get_variable("CvK", [kw, kh, nin, nout])
@@ -254,10 +254,10 @@ class NeuralGPUAtSize(object):
           vs.reuse_variables()
         cur = tf.nn.dropout(cur, keep_prob)
         extras = []
-        if FLAGS.global_sum:
+        if FLAGS.do_globalsum:
           # bs x 1 x 1 x nmaps
           basic_global_info = tf.reduce_sum(cur, [1, 2], True)
-          global_info = conv_linear(basic_global_info, 1, 1, FLAGS.global_sum,
+          global_info = conv_linear(basic_global_info, 1, 1, FLAGS.do_globalsum,
                                     "indices", self.initializer)
           extras.append(mytf.broadcast_as(global_info, cur, [1,2]))
 
@@ -268,7 +268,7 @@ class NeuralGPUAtSize(object):
             (FLAGS.do_shifter == 4 and it == 0) or
             (FLAGS.do_shifter == 5 and it == 1) or
             (FLAGS.do_shifter == 6) or
-            (FLAGS.do_shifter == 7 and it % 5 == 0) or
+            (FLAGS.do_shifter == 7 and it % 5 == 1) or
             (FLAGS.do_shifter == 8 and it == 1) or
             (FLAGS.do_shifter > 8)
             ):

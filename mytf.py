@@ -12,8 +12,8 @@ def broadcast_as(origin, target, axes=None):
   for d, (i, o) in enumerate(zip(in_size, out_size)):
     if i is None or o is None:
       result.append(1)
-    assert o % i == 0
     if d in axes:
+      assert o % i == 0
       result.append(o//i)
     else:
       result.append(1)
