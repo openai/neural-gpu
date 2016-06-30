@@ -25,6 +25,7 @@ remote = models/neural_gpu
 # Use "*" for any filename character and "**" for any character,
 # including "/" in pathnames.
 exclude = logs
+exclude = cachedlogs
 exclude = .realsync
 exclude = CVS
 exclude = .git
