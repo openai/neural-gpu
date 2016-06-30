@@ -287,13 +287,12 @@ class NeuralGPUAtSize(object):
             # shape: bs x length x height
             indices = mytf.stack([first, second] + [rest]*(self.config.height - 2), 2)
           elif FLAGS.do_shifter > 5:
-            indices = mytf.safe_squeeze(conv_linear(cur, 1, 1, 1,
-                                                    "indices", self.initializer,
-                                                    extras=extras), -1)
+            indices = mytf.safe_squeeze(conv_linear(extras+[cur], 1, 1, 1,
+                                                    "indices", self.initializer), -1)
           else:
             # indices shape: bs x length x height(in) x height(out)
-            indices = conv_linear(cur, 1, 1, self.config.height,
-                                  "indices", self.initializer, extras=extras)
+            indices = conv_linear(extras+[cur], 1, 1, self.config.height,
+                                  "indices", self.initializer)
           self.indices[it] = indices
           if FLAGS.do_shifter < 5:
             cur = indexer_block2(cur, indices)
