@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 from __future__ import print_function
+
+import datetime
 import glob
 import subprocess
 import collections
@@ -84,6 +86,14 @@ class Results(object):
         self.__dict__.update(metadata)
         self.metadata = metadata
 
+    @property
+    def age(self):
+        start_time = self.metadata.get('date')
+        if start_time is None:
+            return 'old'
+        else:
+            return str(datetime.datetime.now() - start_time)
+
     def _parse_logs(self):
         if hasattr(self, 'results'):
             return
@@ -136,7 +146,7 @@ class Results(object):
 
     def print_out(self, verbosity=1):
         to_print = {}
-        keys = set('argv label locations'.split())
+        keys = set('argv age label locations'.split())
         if verbosity >= 1:
             self._parse_logs()
             self._running_programs()

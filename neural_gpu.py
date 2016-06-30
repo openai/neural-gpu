@@ -258,17 +258,17 @@ class NeuralGPUAtSize(object):
           # bs x 1 x 1 x nmaps
           basic_global_info = tf.reduce_sum(cur, [1, 2], True)
           global_info = conv_linear(basic_global_info, 1, 1, FLAGS.do_globalsum,
-                                    "indices", self.initializer)
+                                    "globalsum", self.initializer)
           extras.append(mytf.broadcast_as(global_info, cur, [1,2]))
 
 
         if (FLAGS.do_shifter == 1 or
             (FLAGS.do_shifter == 2 and it == 0) or
-            (FLAGS.do_shifter == 3 and it % 5 == 0) or
+            (FLAGS.do_shifter == 3 and it % self.config.rx_step == 0) or
             (FLAGS.do_shifter == 4 and it == 0) or
             (FLAGS.do_shifter == 5 and it == 1) or
             (FLAGS.do_shifter == 6) or
-            (FLAGS.do_shifter == 7 and it % 5 == 1) or
+            (FLAGS.do_shifter == 7 and it % self.config.rx_step == 1) or
             (FLAGS.do_shifter == 8 and it == 1) or
             (FLAGS.do_shifter > 8)
             ):
