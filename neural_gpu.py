@@ -256,7 +256,8 @@ class NeuralGPUAtSize(object):
         extras = []
         if FLAGS.do_globalsum:
           # bs x 1 x 1 x nmaps
-          basic_global_info = tf.reduce_sum(cur, [1, 2], True) / self.config.height / 10
+          basic_global_info = tf.reduce_sum(cur, [1, 2], True)
+          basic_global_info = tf.nn.l2_normalize(basic_global_info, 3) * nmaps**.5
           global_info = conv_linear(basic_global_info, 1, 1, FLAGS.do_globalsum,
                                     "globalsum", self.initializer)
           extras.append(mytf.broadcast_as(global_info, cur, [1,2]))
