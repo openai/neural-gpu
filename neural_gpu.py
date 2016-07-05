@@ -202,7 +202,7 @@ class NeuralGPUAtSize(object):
     self.config = model.config
     self.length = length
     # batch_size x length x height
-    self.input = tf.placeholder(tf.int32, shape=(None,length, self.config.input_height),
+    self.input = tf.placeholder(tf.int32, shape=(None, length, self.config.input_height),
                                 name="input{0}".format(length))
     self.target = tf.placeholder(tf.int32, shape=(None,length), name="target{0}".format(length))
     #tf.concat(1, [tf.reshape(i, [-1, 1]) for i in model.target[:length]])
@@ -405,17 +405,17 @@ class NeuralGPUAtSize(object):
     """Run a step of the network."""
     inp, target, taskid = batch
     assert inp.shape[0] == target.shape[0]
-    assert inp.shape[1] == target.shape[1]
+    assert inp.shape[-1] == target.shape[1]
     if len(inp.shape) == 2:
-      inp = np.expand_dims(inp, 2)
+      inp = np.expand_dims(inp, 1)
     assert len(inp.shape) == 3
-    if inp.shape[2] < self.config.input_height:
-      extra = self.config.input_height - inp.shape[2]
-      inp = np.concatenate([inp] + [np.zeros_like(inp[:,:,:1])]*extra, axis=2)
+    if inp.shape[1] < self.config.input_height:
+      extra = self.config.input_height - inp.shape[1]
+      inp = np.concatenate([inp] + [np.zeros_like(inp[:,:1,:])]*extra, axis=1)
     feed_in = {}
     feed_in[self.do_training] = do_backward
     feed_in[self.task] = taskid
-    feed_in[self.input] = inp
+    feed_in[self.input] = inp.transpose([0,2,1])
     feed_in[self.target] = target
     feed_out = {}
     feed_out.update(more_feed)

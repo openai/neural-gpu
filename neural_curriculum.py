@@ -166,18 +166,9 @@ class NeuralGPUResult(object):
 
   def to_string(self, i=None):
     if i is None:
-      return '\n'.join(self.to_string(i) for i in range(self.batch_size))
-    input_symbols = data_utils.to_string(self.input[i].transpose().astype(int))
-    output_symbols = data_utils.to_string(self.output[i,:self.length,:].argmax(axis=-1)).rstrip(' 0')
-    target_symbols = data_utils.to_string(self.target[i,:self.length].astype(int))
-    inp_str = (input_symbols if self.input.shape[2] > 1 else
-               '%s\n%s' % (input_symbols[:self.length//2+1],
-                           input_symbols[self.length//2+1:]))
-    return '%s=\n%s %s\n%s' % (input_symbols,
-                               output_symbols.rstrip('0'),
-                               'T' if output_symbols == target_symbols else 'F',
-                               target_symbols
-    )
+      return '\n\n'.join(self.to_string(i) for i in range(self.batch_size))
+    inp, outp, targ = map(data_utils.to_string, (self.input[i], self.output[i].argmax(axis=-1), self.target[i]))
+    return '\n'.join([inp, '-'*len(outp), outp, targ])
 
   def plot_attention(self, figname):
     import pylab

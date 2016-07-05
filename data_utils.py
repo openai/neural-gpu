@@ -37,6 +37,15 @@ log_filename = ""
 PADDING = True
 
 
+DIGITS = range(1, 11)
+NULL = 0
+PLUS = 11
+MINUS = 12
+TIMES = 13
+DUP = 14
+SPACE = 20
+START = 21
+
 def pad(l):
   for b in bins + [forward_max]:
     if b >= l: return b
@@ -64,6 +73,8 @@ class DataGenerator(object):
   nclass = 33
   name = '<unknown task>'
   taskid = 0
+  height = None
+  min_length = 1
 
   def is_valid_length(self, l):
     return True
@@ -74,10 +85,15 @@ class DataGenerator(object):
 
   def rand_pair_padded(self, length):
     pad_length = pad(length)
-    data = self.rand_pair(length)
-    return [np.concatenate([x, np.zeros((pad_length - x.shape[0],) + x.shape[1:])],
-                           axis=0)
-            for x in data]
+    inp, outp = self.rand_pair(length)
+    inp = np.array(inp)
+    if len(inp.shape) == 1:
+      inp = np.array([inp])
+    padding_func = lambda x: np.pad(x, [(0,0)]*(len(x.shape)-1) +
+                                       [(0, pad_length - x.shape[-1])], 'constant')
+    inp, outp = padding_func(inp), padding_func(outp)
+    assert inp.shape[-1] == pad_length, outp.shape[-1] == pad_length
+    return inp, outp
 
   def get_batch(self, length, batch_size):
     inps, outps = [], []
@@ -97,13 +113,15 @@ class DataGenerator(object):
     return "<%s name='%s' taskid=%s>" % (self.__class__.__name__, self.name, self.taskid)
 
 class OpGenerator(DataGenerator):
+  min_length = 3
+
   def __init__(self, base, f, sep):
     self.base = base
     self.f = f
     self.sep = sep
 
   def is_valid_length(self, l):
-    return l%2 == 1 and l > 3
+    return l%2 == 1 and l > self.min_length
 
   def _rand_inputs(self, k):
     k = int(k)
@@ -115,13 +133,13 @@ class OpGenerator(DataGenerator):
     k = int((l-1 - 2*PADDING)//2)
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
-    inp = np.concatenate([[21] if PADDING else [],
+    inp = np.concatenate([[START] if PADDING else [],
        to_base(n1, self.base, k) + 1,
        [self.sep],
                           to_base(n2, self.base, k) + 1,
                           #[22] if PADDING else []
     ])
-    outp = np.concatenate([#[21] if PADDING else [],
+    outp = np.concatenate([#[START] if PADDING else [],
             to_base(result, self.base, 2*k+1) + 1,
                            #[22] if PADDING else []
     ])
@@ -160,11 +178,12 @@ generators.update(dict(baddt=ToughAddGenerator(2, 11),
 
 
 class AlignedOpGenerator(OpGenerator):
+  min_length = 2
   def rand_pair(self, l):
     k = int((l-1 - 2*PADDING)//2)
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
-    n1, n2 = [np.concatenate([[21] if PADDING else [],
+    n1, n2 = [np.concatenate([[START] if PADDING else [],
                               to_base(n, self.base, k) + 1,
                               #[22] if PADDING else []
                              ]) for n in [n1,n2]]
@@ -174,12 +193,12 @@ class AlignedOpGenerator(OpGenerator):
     inp2 = np.vstack([pad_n1, pad_n2])
     #XXX cheating on length here
     if True:
-      o = np.concatenate([[21] if PADDING else [], to_base(result, self.base, l-1) + 1])
+      o = np.concatenate([[START] if PADDING else [], to_base(result, self.base, l-1) + 1])
     else:
       #o = to_base(result, self.base) + 1
       o = to_base(result, self.base, k+2) + 1
-    outp = np.pad(o, (0, preferred_length - len(o)), 'constant')
-    return inp2.transpose(), outp
+    outp = np.pad(o, (SPACE, preferred_length - len(o)), 'constant')
+    return inp2, outp
 
 class AlignedToughAddGenerator(AlignedOpGenerator, ToughAddGenerator):
   pass
@@ -205,13 +224,83 @@ generators.update(dict(rev=FGenerator(lambda l: l[::-1]),
                        id=FGenerator(lambda l: l),
                        ))
 
-class DupGenerator(DataGenerator):
+
+# With spacing
+class SpacedGenerator(DataGenerator):
+  height=4
+
+  def is_valid_length(self, l):
+    return super(SpacedGenerator, self).is_valid_length(l) and l > self.min_length + 1
+
   def rand_pair(self, l):
-    k = l/2
-    x = [np.random.randint(self.nclass - 1) + 1 for _ in xrange(k)]
-    inp = x + [0 for _ in xrange(l - k)]
-    res = x + x + [0 for _ in xrange(l - 2*k)]
+    l2 = np.random.randint(self.min_length, l)
+    inp, res = self._rand_pair(l2)
+    if isinstance(inp[0], int):
+      inp = [inp]
+    inp = np.array(inp)
+    goal_dims = (self.height, l)
+    bots = (0, 1)
+    tops = (goal_dims[0] - inp.shape[0], goal_dims[1] - inp.shape[1])
+    placed_loc = [np.random.randint(b, t+1) for b, t in zip(bots, tops)]
+    final_inp = np.zeros(goal_dims) + SPACE
+    final_inp[:,0] = START
+    final_inp[placed_loc[0]:placed_loc[0]+inp.shape[0],
+              placed_loc[1]:placed_loc[1]+inp.shape[1]] = inp
+    res = np.concatenate([res, [SPACE] * (l - len(res))])
+    return (final_inp, res)
+
+class CopyGenerator(SpacedGenerator):
+  def _rand_pair(self, l):
+    x = [np.random.randint(10)+1 for _ in xrange(l)]
+    inp = x
+    res = x
     return inp, res
+
+class DupGenerator(SpacedGenerator):
+  min_length = 2
+  def _rand_pair(self, l):
+    x = [np.random.randint(10)+1 for _ in xrange(l-1)]
+    inp = [DUP] + x
+    res = x + x
+    return inp, res
+
+class SpacedAlignedOpGenerator(SpacedGenerator, OpGenerator):
+  def _rand_pair(self, l):
+    k = int((l-1)//2)
+    n1, n2 = self._rand_inputs(k)
+    result = self.f(n1, n2)
+    n1, n2 = [to_base(n, self.base) + 1 for n in [n1,n2]]
+    preferred_length = max(len(n1), len(n2))
+    inp = np.array([np.pad(n, (0, preferred_length - len(n)), 'constant',
+                           constant_values=SPACE) for n in (n1, n2)])
+    inp = np.concatenate([[[SPACE, self.sep]], inp.T]).T
+    o = to_base(result, self.base) + 1
+    return inp, o
+
+class TSAOG(SpacedAlignedOpGenerator, ToughAddGenerator):
+  pass
+
+class SpacedOpGenerator(SpacedGenerator, OpGenerator):
+  def _rand_pair(self, l):
+    k = int((l-1)//2)
+    n1, n2 = self._rand_inputs(k)
+    result = self.f(n1, n2)
+    n1, n2 = [to_base(n, self.base) + 1 for n in [n1,n2]]
+    inp = np.concatenate([n1, [self.sep], n2])
+    o = to_base(result, self.base) + 1
+    return inp, o
+
+class TSOG(SpacedOpGenerator, ToughAddGenerator):
+  pass
+
+generators.update(dict(scopy=CopyGenerator(),
+                       sdup=DupGenerator(),
+                       sbadde=SpacedAlignedOpGenerator(2, operator.add, 11),
+                       sbaddet=TSAOG(2, 11),
+                       sbadd=SpacedOpGenerator(2, operator.add, 11),
+                       sbaddt=TSOG(2, 11),
+                       ))
+
 
 class MixGenerator(DataGenerator):
   def __init__(self, gens):
@@ -228,12 +317,25 @@ generators.update(dict(dup=DupGenerator(),
 for k in generators:
   generators[k].name = k
 
+def set_height(self, height):
+  for k in generators:
+    generators[k].height = height
+
+
+
+
+
+
+
 @np.vectorize
 def char_to_symbol(i):
   """Covert ids to text."""
-  if i == 0: return " "
+  i = int(i)
+  if i == 0: return "_"
   if i in [11,12,13]: return "+"
   if i in [14,15,16]: return "*"
+  if i in [START]: return '^'
+  if i in [SPACE]: return '.'
   return str(i-1)
 
 def join_array(array):
@@ -245,6 +347,12 @@ def join_array(array):
     raise ValueError("Weird shape for joining: %s" % array.shape)
 
 def to_string(array):
+  if isinstance(array, tuple):
+    if len(array) == 3: # Batches
+      inp, outp = array[:2]
+      return '\n\n'.join(to_string((i,o)) for i,o in zip(inp, outp))
+    inp, outp = map(to_string, array[:2])
+    return '%s\n%s\n%s' % (inp, '-'*len(inp.split('\n')[0]), outp)
   return join_array(char_to_symbol(array))
 
 @np.vectorize
