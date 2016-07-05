@@ -259,7 +259,7 @@ class CopyGenerator(SpacedGenerator):
 class DupGenerator(SpacedGenerator):
   min_length = 2
   def _rand_pair(self, l):
-    x = [np.random.randint(10)+1 for _ in xrange(l-1)]
+    x = [np.random.randint(10)+1 for _ in xrange(l//2)]
     inp = [DUP] + x
     res = x + x
     return inp, res
