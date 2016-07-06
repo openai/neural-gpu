@@ -34,7 +34,7 @@ all_tasks = ["sort", "kvsort", "id", "rev", "rev2", "incr", "add", "left",
 forward_max = 128
 log_filename = ""
 
-PADDING = True
+PADDING = False
 
 
 DIGITS = range(1, 11)
@@ -239,27 +239,34 @@ class SpacedGenerator(DataGenerator):
       inp = [inp]
     inp = np.array(inp)
     goal_dims = (self.height, l)
-    bots = (0, 1)
+    bots = (0, 1 if PADDING else 0)
     tops = (goal_dims[0] - inp.shape[0], goal_dims[1] - inp.shape[1])
     placed_loc = [np.random.randint(b, t+1) for b, t in zip(bots, tops)]
     final_inp = np.zeros(goal_dims) + SPACE
-    final_inp[:,0] = START
+    if PADDING:
+      final_inp[:,0] = START
     final_inp[placed_loc[0]:placed_loc[0]+inp.shape[0],
               placed_loc[1]:placed_loc[1]+inp.shape[1]] = inp
     res = np.concatenate([res, [SPACE] * (l - len(res))])
     return (final_inp, res)
 
 class CopyGenerator(SpacedGenerator):
+  def __init__(self, base):
+    self.base = base
+
   def _rand_pair(self, l):
-    x = [np.random.randint(10)+1 for _ in xrange(l)]
+    x = [np.random.randint(self.base)+1 for _ in xrange(l)]
     inp = x
     res = x
     return inp, res
 
 class DupGenerator(SpacedGenerator):
   min_length = 2
+  def __init__(self, base):
+    self.base = base
+
   def _rand_pair(self, l):
-    x = [np.random.randint(10)+1 for _ in xrange(l//2)]
+    x = [np.random.randint(self.base)+1 for _ in xrange(l//2)]
     inp = [DUP] + x
     res = x + x
     return inp, res
@@ -293,8 +300,10 @@ class SpacedOpGenerator(SpacedGenerator, OpGenerator):
 class TSOG(SpacedOpGenerator, ToughAddGenerator):
   pass
 
-generators.update(dict(scopy=CopyGenerator(),
-                       sdup=DupGenerator(),
+generators.update(dict(scopy=CopyGenerator(10),
+                       sdup=DupGenerator(10),
+                       sbcopy=CopyGenerator(2),
+                       sbdup=DupGenerator(2),
                        sbadde=SpacedAlignedOpGenerator(2, operator.add, 11),
                        sbaddet=TSAOG(2, 11),
                        sbadd=SpacedOpGenerator(2, operator.add, 11),
@@ -310,8 +319,7 @@ class MixGenerator(DataGenerator):
     i = np.random.randint(len(self.sets))
     return self.sets[i].rand_pair(length)
 
-generators.update(dict(dup=DupGenerator(),
-                       mix=MixGenerator([generators[x] for x in 'badd bmul'.split()]),
+generators.update(dict(mix=MixGenerator([generators[x] for x in 'badd bmul'.split()]),
                        ))
 
 for k in generators:

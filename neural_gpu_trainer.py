@@ -88,8 +88,11 @@ def define_flags():
   tf.app.flags.DEFINE_bool("print_one", True, "Print one example each evaluation")
 
   tf.app.flags.DEFINE_bool("do_lastout", False, "Whether to use last output.")
+  tf.app.flags.DEFINE_bool("do_outchoice", False, "Whether to choose output layer.")
   tf.app.flags.DEFINE_bool("do_layers", False, "Expose output for all layers.")
   tf.app.flags.DEFINE_integer("input_height", 1, "Input height.")
+
+  tf.app.flags.DEFINE_bool("progressive_curriculum", False, "Whether to use progressive curriculum.")
 
   tf.app.flags.DEFINE_integer("do_globalsum", 0, "Feed global sum to everyone.")
 
@@ -228,7 +231,10 @@ def initialize(sess, checkpoint_dir=None):
     model.saver.restore(sess, ckpt.model_checkpoint_path)
 
     #curriculum = neural_curriculum.MixedCurriculum(data_generators, model.config)
-  curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
+  if FLAGS.progressive_curriculum:
+    curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config)
+  else:
+    curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
   model.curriculum = curriculum
 
   # Return the model and needed variables.
@@ -344,13 +350,15 @@ def run_evaluation(sess, model, batch_size):
       errors.append(seq_err)
       if len(errors) >= 4 and min(errors[-4:]) == 1:
         break
+    if FLAGS.print_one:
+      data.print_out(result.to_string(0))
     if seq_err < 0.05:  # Run larger test if we're good enough.
       _, seq_err = multi_test(data.forward_max, model, sess, task,
                               FLAGS.nprint, batch_size * 4)
       data.print_out("LARGE ERROR: %s %s %s"  % (global_step, seq_err, task))
       log_output.write('%s %s %s\n' % (global_step, seq_err, task))
-    if FLAGS.print_one:
-      data.print_out(result.to_string(0))
+      if FLAGS.print_one:
+        data.print_out(result.to_string(0))
   if seq_err < 0.01:  # Super-large test on 1-task large-forward models.
     if data.forward_max > 4000 and len(tasks) == 1:
       multi_test(data.forward_max, model, sess, task, FLAGS.nprint,

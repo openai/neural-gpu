@@ -359,6 +359,17 @@ class NeuralGPUAtSize(object):
     outputs = mytf.safe_squeeze(layer_output, -2) # (depth+1) x batch x length x noclass
     if FLAGS.do_lastout:
       output = outputs[-1,:,:,:]
+    elif FLAGS.do_outchoice:
+      weighting = tf.get_variable("Probs", [self.config.height, self.config.nmaps])
+      # depth x bs
+      probs = tf.reduce_mean(self.layers[1:,:,:,:,:] * weighting, [2,3,4])
+      self.probs = tf.transpose(mytf.softmax(tf.transpose(probs)))
+      
+      output = tf.reduce_sum(outputs[1:,:,:,:]*mytf.expand_dims_by_k(self.probs, 2), 0)
+      # bs
+      ts = tf.range(mytf.shape_list(self.probs)[0])
+      times = tf.reduce_sum(self.probs * mytf.expand_dims_by_k(tf.to_float(ts), 1), 0)
+      time_loss = tf.reduce_mean(times)
     else:
       output = tf.reduce_sum(outputs[1:,:,:,:] * scales, 0)
     self.layer_outputs = mytf.softmax(outputs)
@@ -372,6 +383,8 @@ class NeuralGPUAtSize(object):
     # Final loss: cross-entropy + shared parameter relaxation part.
     relax_dist, self.model.avg_op = relaxed_distance(self.config.rx_step)
     total_loss = perp_loss + relax_dist * self.model.pull
+    if FLAGS.do_outchoice:
+      total_loss += 0.001 * time_loss
     if FLAGS.do_binarization:
       binary_gaps = 1 - tf.abs(self.layers)
       self.binary_gap = tf.reduce_mean(binary_gaps * mask) / tf.reduce_mean(mask)
@@ -426,6 +439,8 @@ class NeuralGPUAtSize(object):
       feed_out['layers'] = self.layers
     if FLAGS.do_binarization:
       feed_out['binary_gap'] = self.binary_gap
+    if FLAGS.do_outchoice:
+      feed_out['probs'] = self.probs
     feed_out['loss'] = self.loss
     feed_out['layer_outputs'] = self.layer_outputs
     feed_out['output'] = self.output

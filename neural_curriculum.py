@@ -128,6 +128,17 @@ class GeneralizeCurriculum(Curriculum):
   def length_str(self):
     return str(self.max_cur_lengths[self.generators[0].taskid])
 
+class BetterCurriculum(Curriculum):
+  rand_prob = 0.2
+
+  def draw_generator(self, task=None):
+    if task is not None:
+      return [g for g in self.generators if g.name == task][0]
+    unsolved = [g for g in self.generators if self.max_cur_lengths[g.taskid] < self.max_length]
+    if unsolved and np.random.random() > self.rand_prob:
+      return unsolved[0]
+    return np.random.choice(self.generators)
+
 class NeuralGPUResult(object):
   grad_norm = None
   back_update = None
@@ -168,7 +179,10 @@ class NeuralGPUResult(object):
     if i is None:
       return '\n\n'.join(self.to_string(i) for i in range(self.batch_size))
     inp, outp, targ = map(data_utils.to_string, (self.input[i], self.output[i].argmax(axis=-1), self.target[i]))
-    return '\n'.join([inp, '-'*len(outp), outp, targ])
+    ans = '\n'.join([inp, '-'*len(outp), outp, targ])
+    if hasattr(self, 'probs'):
+      ans = '%s\n%s' % (ans, self.probs[:,i].round(3))
+    return ans
 
   def plot_attention(self, figname):
     import pylab
