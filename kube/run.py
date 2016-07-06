@@ -1,11 +1,12 @@
 from __future__ import print_function
+import argparse
+import datetime
+import hashlib
 import os
 import os.path
 import sys
 import subprocess
-import argparse
 import yaml
-import datetime
 
 parser = argparse.ArgumentParser(description='Run commands')
 parser.add_argument('--label', type=str, default='Experiment')
@@ -30,8 +31,13 @@ EXPERIMENT = 'neural-gpu'
 basedir = os.path.dirname(os.path.realpath(__file__))
 
 
+def to_str(params):
+    return '-'.join(['%s=%s' % (k, params[k]) for k in params if k != 'random_seed'])
+
+
 def to_name(params):
-    return '-'.join(['%s=%s' % (k, params[k]) for k in params if k != 'random_seed']).replace(',', '+')
+    options_str = to_str(params)
+    return hashlib.sha224(options_str).hexdigest()
 
 
 def run_with_options_commands(params):
@@ -52,7 +58,7 @@ def kill(session_label):
     server_location = 'servers/%s' % session_label
     with open(server_location) as f:
         metadata = yaml.load(f)
-        names = metadata['names']
+        names = metadata['names'].keys()
         experiment = metadata['experiment']
         user = metadata['user']
 
@@ -76,7 +82,7 @@ def run_opportunistically(param_sets, session_label):
     with open(os.path.join(basedir, 'job.yaml.tpl'), 'r') as f:
         template = f.read()
 
-    names = []
+    names = {}
     for params in param_sets:
         name = to_name(params)
         command = run_with_options_commands(params)
@@ -87,7 +93,7 @@ def run_opportunistically(param_sets, session_label):
                                     user=USERNAME,
                                     session_label=session_label))
         subprocess.check_call(['kubectl', 'create', '-f', job_filepath])
-        names.append(name)
+        names[name] = params
 
     metadata = {
         'experiment': EXPERIMENT,
