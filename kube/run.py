@@ -37,7 +37,7 @@ def to_str(params):
 
 def to_name(params):
     options_str = to_str(params)
-    return hashlib.sha224(options_str).hexdigest()
+    return hashlib.sha224(options_str).hexdigest()[:10]
 
 
 def run_with_options_commands(params):
@@ -103,7 +103,7 @@ def run_opportunistically(param_sets, session_label):
         'date': datetime.datetime.now(),
         'version': get_git_version(),
         'argv': sys.argv,
-        'params': map(dict(param_sets)),
+        'params': map(dict, param_sets),
         'state': 'alive'
     }
 
