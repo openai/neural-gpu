@@ -191,6 +191,7 @@ def get_config_from_flags(checkpoint_dir = None):
 def initialize(sess, checkpoint_dir=None):
   """Initialize data and model."""
   config = get_config_from_flags(checkpoint_dir)
+  data.print_out(str(sys.argv))
   data.print_out(str(config))
 
   if checkpoint_dir is None:
@@ -265,7 +266,7 @@ def multi_test(l, model, sess, task, nprint, batch_size, offset=None):
   low_batch = min(low_batch, batch_size)
   for mstep in xrange(batch_size / low_batch):
     cur_offset = None if offset is None else offset + mstep * low_batch
-    err, sq_err, _ = single_test(l, model, sess, task, to_print, low_batch,
+    err, sq_err, result = single_test(l, model, sess, task, to_print, low_batch,
                                  False, cur_offset)
     to_print = max(0, to_print - low_batch)
     errors += err
@@ -279,7 +280,7 @@ def multi_test(l, model, sess, task, nprint, batch_size, offset=None):
   seq_err = float(low_batch) * float(seq_err) / batch_size
   data.print_out("  %s len %d errors %.2f sequence-errors %.2f"
                  % (task, l, 100*errors, 100*seq_err))
-  return errors, seq_err
+  return errors, seq_err, result
 
 class Timer(object):
   def __init__(self, label, print_fn=data.print_out):
@@ -353,7 +354,7 @@ def run_evaluation(sess, model, batch_size):
     if FLAGS.print_one:
       data.print_out(result.to_string(0))
     if seq_err < 0.05:  # Run larger test if we're good enough.
-      _, seq_err = multi_test(data.forward_max, model, sess, task,
+      _, seq_err, result = multi_test(data.forward_max, model, sess, task,
                               FLAGS.nprint, batch_size * 4)
       data.print_out("LARGE ERROR: %s %s %s"  % (global_step, seq_err, task))
       log_output.write('%s %s %s\n' % (global_step, seq_err, task))
@@ -488,7 +489,7 @@ def evaluate():
         this_is_broken_because_it_is_the_wrong_format
         animate(l, test_data, anim_size)
       # More tests.
-      _, seq_err = multi_test(data.forward_max, model, sess, t, FLAGS.nprint,
+      _, seq_err, result = multi_test(data.forward_max, model, sess, t, FLAGS.nprint,
                               batch_size * 4)
     if seq_err < 0.01:  # Super-test if we're very good and in large-test mode.
       if data.forward_max > 4000 and len(tasks) == 1:
