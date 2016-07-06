@@ -361,8 +361,10 @@ class NeuralGPUAtSize(object):
       output = outputs[-1,:,:,:]
     elif FLAGS.do_outchoice:
       weighting = tf.get_variable("Probs", [self.config.height, self.config.nmaps])
+      # Do this in two stages to have smaller variables
+      moo = tf.reduce_mean(self.layers, 2)
       # depth x bs
-      probs = tf.reduce_mean(self.layers[1:,:,:,:,:] * weighting, [2,3,4])
+      probs = tf.reduce_mean(moo[1:,:,:,:] * weighting, [2,3])
       self.probs = tf.transpose(mytf.softmax(tf.transpose(probs)))
       
       output = tf.reduce_sum(outputs[1:,:,:,:]*mytf.expand_dims_by_k(self.probs, 2), 0)
