@@ -1,0 +1,41 @@
+apiVersion: extensions/v1beta1
+kind: Job
+metadata:
+  name: ecprice-neural-gpu
+spec:
+  selector:
+    matchLabels:
+      experiment: ecprice-neural-gpu
+  template:
+    metadata:
+      name: ecprice-neural-gpu
+      labels:
+        experiment: ecprice-neural-gpu
+    spec:
+      containers:
+        - name: experiment
+          image: quay.io/openai/ecprice-neural-gpu
+          volumeMounts:
+            - name: nvidia
+              mountPath: /usr/local/nvidia
+              readOnly: true
+          securityContext:
+            privileged: true
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              memory: "14Gi"
+              cpu: 3.6
+            # if you set lmits to be the same as requests
+            # your QoS tier will be "Guaranteed" instead of "BestEffort"
+            # so you won't get killed as easily by bursting OOM
+            limits:
+              memory: "14Gi"
+              cpu: 3.6
+      volumes:
+        - name: nvidia
+          hostPath:
+            path: /var/lib/docker/volumes/nvidia_driver_352.63/_data
+      nodeSelector:
+        aws/type: g2.2xlarge
+      restartPolicy: OnFailure
