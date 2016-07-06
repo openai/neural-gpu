@@ -55,8 +55,8 @@ def oneserver_commands(param_sets, session_label, gpus):
 
 
 def kill(session_label):
-    server_location = 'servers/%s' % session_label
-    with open(server_location) as f:
+    jobs_location = os.path.join(basedir, 'jobs/%s' % session_label)
+    with open(jobs_location) as f:
         metadata = yaml.load(f)
         names = metadata['names'].keys()
         experiment = metadata['experiment']
@@ -69,14 +69,14 @@ def kill(session_label):
         subprocess.check_call(['kubectl', 'delete', 'job', job_name])
 
     metadata['state'] = 'dead'
-    with open(server_location, 'w') as f:
+    with open(jobs_location, 'w') as f:
         f.write(yaml.safe_dump(metadata))
     print('Success! Writing state out to file.')
 
 
 def run_opportunistically(param_sets, session_label):
-    server_location = 'servers/%s' % session_label
-    if os.path.isfile(server_location):
+    jobs_location = os.path.join(basedir, 'jobs/%s' % session_label)
+    if os.path.isfile(jobs_location):
         raise ValueError('Server location file already exists!')
 
     with open(os.path.join(basedir, 'job.yaml.tpl'), 'r') as f:
@@ -107,7 +107,7 @@ def run_opportunistically(param_sets, session_label):
         'state': 'alive'
     }
 
-    with open(server_location, 'w') as f:
+    with open(jobs_location, 'w') as f:
         f.write(yaml.safe_dump(metadata))
 
     print('Done')
