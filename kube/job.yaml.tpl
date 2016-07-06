@@ -1,24 +1,37 @@
 apiVersion: extensions/v1beta1
 kind: Job
 metadata:
-  name: ecprice-neural-gpu
+  name: {user}-{experiment}-{name}
 spec:
   selector:
     matchLabels:
-      experiment: ecprice-neural-gpu
+      experiment: {experiment}
+      variant: {name}
+      owner: {user}
   template:
     metadata:
-      name: ecprice-neural-gpu
+      name: {user}-{experiment}-{name}
       labels:
-        experiment: ecprice-neural-gpu
+        experiment: {experiment}
+        variant: {name}
+        owner: {user}
     spec:
       containers:
         - name: experiment
           image: quay.io/openai/ecprice-neural-gpu
+          env:
+          - name: TRAIN_DIR
+            value: /mnt/ecprice/neural-gpu/{session_label}/{name}
+          command:
+          - bash
+          - -c
+          - "mkdir -p $TRAIN_DIR && {command} --train_dir=$TRAIN_DIR"
           volumeMounts:
             - name: nvidia
               mountPath: /usr/local/nvidia
               readOnly: true
+            - name: nfs
+              mountPath: "/mnt"
           securityContext:
             privileged: true
           imagePullPolicy: IfNotPresent
@@ -36,6 +49,10 @@ spec:
         - name: nvidia
           hostPath:
             path: /var/lib/docker/volumes/nvidia_driver_352.63/_data
+        - name: nfs
+          persistentVolumeClaim:
+            claimName: nfs-us-west-2a-claim
       nodeSelector:
         aws/type: g2.2xlarge
-      restartPolicy: OnFailure
+        aws/region: us-west-2
+      restartPolicy: onFailure
