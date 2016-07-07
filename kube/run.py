@@ -83,7 +83,7 @@ def run_opportunistically(param_sets, session_label):
 
     experiment = session_label.lower()
     names = {}
-    params = {}
+    param_dict = {}
     for params in param_sets:
         longname = to_str(params)
         shortname = short_name(params)
@@ -97,7 +97,7 @@ def run_opportunistically(param_sets, session_label):
                                     session_label=session_label))
         subprocess.check_call(['kubectl', 'create', '-f', job_filepath])
         names[shortname] = longname
-        params[longname] = dict(params)
+        param_dict[longname] = dict(params)
 
     metadata = {
         'experiment': experiment,
@@ -107,7 +107,7 @@ def run_opportunistically(param_sets, session_label):
         'date': datetime.datetime.now(),
         'version': get_git_version(),
         'argv': sys.argv,
-        'params': params,
+        'params': param_dict,
         'state': 'alive'
     }
 
