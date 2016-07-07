@@ -96,7 +96,7 @@ def run_opportunistically(param_sets, session_label):
                                     session_label=session_label))
         subprocess.check_call(['kubectl', 'create', '-f', job_filepath])
         names[shortname] = longname
-        names[longname] = params
+        names[longname] = dict(params)
 
     metadata = {
         'experiment': experiment,
