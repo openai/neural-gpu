@@ -143,8 +143,6 @@ def main(param_sets):
     if not args.local:
         if args.kill:
             kill(args.label)
-            print("Repeating, for good measure")
-            kill(args.label)
             return
         run_opportunistically(param_sets, args.label)
     else:
