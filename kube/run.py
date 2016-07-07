@@ -82,6 +82,7 @@ def run_opportunistically(param_sets, session_label):
     with open(os.path.join(basedir, 'job.yaml.tpl'), 'r') as f:
         template = f.read()
 
+    experiment = session_label.lower()
     names = {}
     for params in param_sets:
         longname = to_str(params)
@@ -89,7 +90,7 @@ def run_opportunistically(param_sets, session_label):
         command = run_with_options_commands(params)
         job_filepath = os.path.join(basedir, 'deployed/{}.yaml'.format(shortname))
         with open(job_filepath, 'w') as f:
-            f.write(template.format(experiment=session_label,
+            f.write(template.format(experiment=experiment,
                                     name=shortname, command=command,
                                     longname=longname,
                                     user=USERNAME,
@@ -99,7 +100,7 @@ def run_opportunistically(param_sets, session_label):
         names[longname] = params
 
     metadata = {
-#        'experiment': EXPERIMENT,
+        'experiment': experiment,
         'user': USERNAME,
         'names': names,
         'label': session_label,
