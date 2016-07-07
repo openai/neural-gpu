@@ -21,11 +21,11 @@ spec:
           image: quay.io/openai/ecprice-neural-gpu
           env:
           - name: TRAIN_DIR
-            value: /mnt/ecprice/neural-gpu/{session_label}/{name}
+            value: /mnt/ecprice/neural-gpu/{session_label}/{longname}
           command:
           - bash
           - -c
-          - "mkdir -p $TRAIN_DIR && {command} --train_dir=$TRAIN_DIR"
+          - "mkdir -p `dirname $TRAIN_DIR` && {command} --train_dir=$TRAIN_DIR"
           volumeMounts:
             - name: nvidia
               mountPath: /usr/local/nvidia

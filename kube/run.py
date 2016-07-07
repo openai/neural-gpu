@@ -35,7 +35,7 @@ def to_str(params):
     return '-'.join(['%s=%s' % (k, params[k]) for k in params if k != 'random_seed'])
 
 
-def to_name(params):
+def short_name(params):
     options_str = to_str(params)
     return hashlib.sha224(options_str).hexdigest()[:10]
 
@@ -84,19 +84,22 @@ def run_opportunistically(param_sets, session_label):
 
     names = {}
     for params in param_sets:
-        name = to_name(params)
+        longname = to_str(params)
+        shortname = short_name(params)
         command = run_with_options_commands(params)
-        job_filepath = os.path.join(basedir, 'deployed/{}.yaml'.format(name))
+        job_filepath = os.path.join(basedir, 'deployed/{}.yaml'.format(shortname))
         with open(job_filepath, 'w') as f:
-            f.write(template.format(experiment=EXPERIMENT,
-                                    name=name, command=command,
+            f.write(template.format(experiment=session_label,
+                                    name=shortname, command=command,
+                                    longname=longname,
                                     user=USERNAME,
                                     session_label=session_label))
         subprocess.check_call(['kubectl', 'create', '-f', job_filepath])
-        names[name] = params
+        names[shortname] = longname
+        names[longname] = params
 
     metadata = {
-        'experiment': EXPERIMENT,
+#        'experiment': EXPERIMENT,
         'user': USERNAME,
         'names': names,
         'label': session_label,
