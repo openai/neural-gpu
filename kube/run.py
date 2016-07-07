@@ -36,8 +36,7 @@ def to_str(params):
 
 
 def short_name(params):
-    options_str = to_str(params)
-    return hashlib.sha224(options_str).hexdigest()[:10]
+    return hashlib.sha224(str(params)).hexdigest()[:10]
 
 
 def run_with_options_commands(params):
