@@ -65,7 +65,7 @@ def kill(session_label):
         job_name = '{user}-{experiment}-{name}'.format(user=user,
                                                        experiment=experiment,
                                                        name=name)
-        subprocess.check_call(['kubectl', 'delete', 'job', job_name])
+        subprocess.check_call(['kubectl', 'delete', 'pod', job_name])
 
     metadata['state'] = 'dead'
     with open(jobs_location, 'w') as f:
@@ -78,7 +78,7 @@ def run_opportunistically(param_sets, session_label):
     if os.path.isfile(jobs_location):
         raise ValueError('Server location file already exists!')
 
-    with open(os.path.join(basedir, 'job.yaml.tpl'), 'r') as f:
+    with open(os.path.join(basedir, 'pod.yaml.tpl'), 'r') as f:
         template = f.read()
 
     experiment = session_label.lower()
