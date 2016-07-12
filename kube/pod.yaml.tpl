@@ -42,7 +42,7 @@ spec:
         path: /var/lib/docker/volumes/nvidia_driver_352.63/_data
     - name: nfs
       persistentVolumeClaim:
-        claimName: nfs-us-west-2a-claim
+        claimName: nfs-us-west-claim
   nodeSelector:
     aws/type: g2.2xlarge
     aws/region: us-west-2
