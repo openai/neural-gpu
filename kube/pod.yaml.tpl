@@ -4,7 +4,7 @@ metadata:
   name: {user}-{experiment}-{name}
   labels:
     experiment: {experiment}
-    variant: {name}
+    variant: '{name}'
     owner: {user}
 spec:
   containers:
