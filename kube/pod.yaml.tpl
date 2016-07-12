@@ -25,7 +25,7 @@ spec:
           mountPath: "/mnt"
       securityContext:
         privileged: true
-      imagePullPolicy: IfNotPresent
+      imagePullPolicy: Always
       resources:
         requests:
           memory: "14Gi"
