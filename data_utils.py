@@ -204,11 +204,11 @@ class AlignedOpGenerator(OpGenerator):
     inp2 = np.vstack([pad_n1, pad_n2])
     #XXX cheating on length here
     if True:
-      o = np.concatenate([[START] if PADDING else [], to_base(result, self.base, l-1) + 1])
+      o = np.concatenate([[START] if PADDING else [], to_base(result, self.base, l) + 1])
     else:
-      #o = to_base(result, self.base) + 1
-      o = to_base(result, self.base, k+2) + 1
-    outp = np.pad(o, (SPACE, preferred_length - len(o)), 'constant')
+      o = to_base(result, self.base) + 1
+      #o = to_base(result, self.base, k+2) + 1
+    outp = np.pad(o, (0, preferred_length - len(o)), 'constant', constant_values=SPACE)
     return inp2, outp
 
 class AlignedToughAddGenerator(AlignedOpGenerator, ToughAddGenerator):
@@ -387,6 +387,15 @@ def to_id(s):
   if s == "*": return 14
   return int(s) + 1
 
+class TeeErr(object):
+    def __init__(self, f):
+        self.file = f
+        self.stderr = sys.stderr
+        sys.stderr = self
+    def write(self, data):
+        self.file.write(data)
+        self.file.flush()
+        self.stderr.write(data)
 
 def print_out(s, newline=True):
   """Print a message out and log it to file."""

@@ -176,6 +176,9 @@ def get_config_from_flags(checkpoint_dir = None):
   if FLAGS.jobid >= 0:
     data.log_filename = os.path.join(checkpoint_dir, "log%d" % FLAGS.jobid)
 
+  data.err_tee = data.TeeErr(open(os.path.join(checkpoint_dir, "err%d" % FLAGS.jobid),
+                                  'w'))
+
   data.print_out("NN ", newline=False)
 
   config = neural_curriculum.NeuralConfig(FLAGS)
