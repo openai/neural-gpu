@@ -114,6 +114,7 @@ class DataGenerator(object):
 
 class OpGenerator(DataGenerator):
   min_length = 3
+  zero_pad = True
 
   def __init__(self, base, f, sep):
     self.base = base
@@ -134,13 +135,13 @@ class OpGenerator(DataGenerator):
     n1, n2 = self._rand_inputs(k)
     result = self.f(n1, n2)
     inp = np.concatenate([[START] if PADDING else [],
-       to_base(n1, self.base, k) + 1,
+       to_base(n1, self.base, k if self.zero_pad else 1) + 1,
        [self.sep],
-                          to_base(n2, self.base, k) + 1,
+                          to_base(n2, self.base, k if self.zero_pad else 1) + 1,
                           #[22] if PADDING else []
     ])
     outp = np.concatenate([#[START] if PADDING else [],
-            to_base(result, self.base, 2*k+1) + 1,
+            to_base(result, self.base, 2*k+1 if self.zero_pad else 1) + 1,
                            #[22] if PADDING else []
     ])
     return inp, outp
@@ -152,6 +153,15 @@ generators.update(dict(badd=OpGenerator(2, operator.add, 11),
                        qmul=OpGenerator(4, operator.mul, 15),
                        mul=OpGenerator(10, operator.mul, 16),))
 
+class UnpaddedOpGenerator(OpGenerator):
+  zero_pad = False
+
+generators.update(dict(baddz=UnpaddedOpGenerator(2, operator.add, 11),
+                       qaddz=UnpaddedOpGenerator(4, operator.add, 12),
+                       addz=UnpaddedOpGenerator(10, operator.add, 13),
+                       bmulz=UnpaddedOpGenerator(2, operator.mul, 14),
+                       qmulz=UnpaddedOpGenerator(4, operator.mul, 15),
+                       mulz=UnpaddedOpGenerator(10, operator.mul, 16),))
 
 class ToughAddGenerator(OpGenerator):
   def __init__(self, base, sep):
@@ -175,6 +185,7 @@ class ToughAddGenerator(OpGenerator):
 
 generators.update(dict(baddt=ToughAddGenerator(2, 11),
                        qaddt=ToughAddGenerator(4, 11),))
+
 
 
 class AlignedOpGenerator(OpGenerator):
@@ -203,12 +214,18 @@ class AlignedOpGenerator(OpGenerator):
 class AlignedToughAddGenerator(AlignedOpGenerator, ToughAddGenerator):
   pass
 
+class ToughUnpaddedAddGenerator(UnpaddedOpGenerator, ToughAddGenerator):
+  pass
+
 generators.update(dict(badde=AlignedOpGenerator(2, operator.add, 11),
                        qadde=AlignedOpGenerator(4, operator.add, 12),
                        adde=AlignedOpGenerator(10, operator.add, 13),
                        baddet=AlignedToughAddGenerator(2, 11),
                        qaddet=AlignedToughAddGenerator(4, 12),
                        addet=AlignedToughAddGenerator(10, 13),
+                       baddzt=ToughUnpaddedAddGenerator(2, 11),
+                       qaddzt=ToughUnpaddedAddGenerator(4, 12),
+                       addzt=ToughUnpaddedAddGenerator(10, 13),
 ))
 
 class FGenerator(DataGenerator):
