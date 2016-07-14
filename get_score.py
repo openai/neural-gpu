@@ -1,4 +1,5 @@
 #!/usr/bin/python
+from __future__ import print_function
 import fileinput
 
 import sys
@@ -8,6 +9,7 @@ import argparse
 import glob
 import scipy.signal
 import os
+import yaml
 
 import collections
 
@@ -18,6 +20,7 @@ RESULT='score'
 parser.add_argument("--key", type=str, default=RESULT)
 parser.add_argument("--task", type=str, default='plot')
 parser.add_argument("--title", type=str, default='')
+parser.add_argument("--savedir", type=str, default='')
 parser.add_argument("--one-legend", type=bool, default=True)
 parser.add_argument("--skip-dir", type=bool, default=False)
 parser.add_argument("--median", action='store_true')
@@ -118,6 +121,13 @@ class Scores(object):
             except KeyError: #Hasn't gotten to 'step' line yet
                 pass
 
+    def commandline(self):
+        return open(os.path.join(self.dirname, 'commandline')).read().split()
+
+    def total_steps(self):
+        lens = self.get_scores('len', self.tasknames[0])
+        return lens.index[-1].item() if lens is not None else None
+
 def get_name(fname):
     return '/'.join(fname.split('/')[:2])
 
@@ -196,14 +206,60 @@ legend_locs = dict(score='upper right',
                    len='lower right',
                    errors='upper right')
 
+def get_filter(column):
+    if column == 'len':
+        return lambda x: x == 41
+    else:
+        return lambda x: x == 0
+
+def get_print_results(scores, column, avg=5):
+    assert len(set(x.key for x in scores)) == 1
+    ans = {}
+    for task in scores[0].tasknames:
+        ans[task] = {}
+        columns = [score.get_scores(column, task) for score in scores]
+        columns = [c for c in columns if c is not None]
+        last_values = [np.mean(c.values[-avg:]).item() for c in columns]
+        ans[task]['last'] = last_values
+        filt = get_filter(column)
+        times = [c.index[np.where(filt(c))] for c in columns]
+        first_time = [t[0].item() if len(t) else None for t in times]
+        ans[task]['first-time'] = first_time
+        ans[task]['fraction'] = len([x for x in first_time if x is not None]) * 1. / len(times)
+
+    return ans
+
+def construct_parsed_data(scores, columns, save_dir):
+    d = {}
+    for s in scores:
+        d.setdefault(s.key, []).append(s)
+
+    for key in d:
+        ans = {}
+        ans['metadata'] = dict(commandline=d[key][0].commandline(),
+                               count = len(d[key]),
+                               steps = [s.total_steps() for s in d[key]]
+        )
+        for col in columns:
+            ans[col] = get_print_results(d[key], col)
+        with open(os.path.join(save_dir, key), 'w') as f:
+            print(yaml.safe_dump(ans), file=f)
+
+
 if __name__ == '__main__':
     args =  parser.parse_args()
     all_tasks = sorted(set(x for file in args.files for x in get_tasks(get_key(file))))
     keys = args.key.split(',')
     prefix = get_prefix(args.files)
     scores = [Scores(f, prefix=prefix) for f in args.files]
-    if args.task == 'print':
-        raise ValueError()
+    if args.task == 'parse':
+        if args.savedir:
+            construct_parsed_data(scores, keys, args.savedir)
+        else:
+            ans = {}
+            for key in keys:
+                ans[key] = get_print_results(scores, key)
+            print(yaml.safe_dump(ans))
     elif args.task == 'plot':
         global pylab
         import pylab

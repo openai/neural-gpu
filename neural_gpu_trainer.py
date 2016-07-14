@@ -123,7 +123,7 @@ def log_parameters(checkpoint_dir):
       raise ValueError("Bad log dir")
     else:
       print()
-      raise ValueError("Even though the argv didn't change, we'll still kill you.")
+      #raise ValueError("Even though the argv didn't change, we'll still kill you.")
 
   with open(command_fname, 'w') as f:
     f.write(' '.join(sys.argv)+'\n')
@@ -153,7 +153,8 @@ def load_model(sess, checkpoint_dir):
   return model
 
 def get_checkpoint_dir():
-  return FLAGS.train_dir + ('-seed%s-pid%s' % (FLAGS.random_seed, os.getpid()))
+  #return FLAGS.train_dir + ('-seed%s-pid%s' % (FLAGS.random_seed, os.getpid()))
+  return FLAGS.train_dir + ('-seed%s' % (FLAGS.random_seed,))
 
 def get_config_from_flags(checkpoint_dir = None):
   # Set random seed.

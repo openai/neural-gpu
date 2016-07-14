@@ -65,7 +65,10 @@ def kill(session_label):
         job_name = '{user}-{experiment}-{name}'.format(user=user,
                                                        experiment=experiment,
                                                        name=name)
-        subprocess.check_call(['kubectl', 'delete', 'pod', job_name])
+        try:
+            subprocess.check_call(['kubectl', 'delete', 'pod', job_name])
+        except subprocess.CalledProcessError as e:
+            print('Error:', e)
 
     metadata['state'] = 'dead'
     with open(jobs_location, 'w') as f:
