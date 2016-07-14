@@ -45,5 +45,4 @@ spec:
         claimName: nfs-us-west-claim
   nodeSelector:
     aws/type: g2.2xlarge
-    aws/region: us-west-2
   restartPolicy: Never
