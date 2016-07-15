@@ -2,9 +2,12 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 import collections
-from kube import run
 
-LABEL = 'July-07-09-testkube'
+# Pick one:
+#from kube import run
+from kube import run_openai_cluster as run
+
+LABEL = 'jonas-testkube'
 
 param_sets = [[('random_seed', seed),
                ('nmaps', nm),
