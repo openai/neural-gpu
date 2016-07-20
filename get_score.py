@@ -139,8 +139,9 @@ def plot_start(key):
         pylab.ylabel('Sequence error on large input')
 
 def plot_results(fname, frame):
+    label = get_name(fname)#fname
     if frame is None: #Just put in legend
-        pylab.plot([], label=get_name(fname), marker='o')
+        pylab.plot([], label=label, marker='o')
         return
     x = frame.index
     ysets = list(frame.T.values)
@@ -151,7 +152,7 @@ def plot_results(fname, frame):
     ysets = np.array(map(f, ysets)).T
     y = np.median(ysets, axis=1) if args.median else ysets.mean(axis=1)
     v=pylab.plot(x, y,
-               label=get_name(fname),
+               label=label,
                marker='o',
     )
     for ys in list(ysets.T):
@@ -174,7 +175,8 @@ def get_tasks(key):
         return tasks
 
 def get_key(fname):
-    return '/'.join(('-'.join(fname.split('-')[:-2])).split('/')[-2:])
+    fname = fname.split('-seed')[0]
+    return '/'.join(fname.split('/')[-2:])
 
 def get_prefix(fileset):
     longest_cp = os.path.commonprefix(fileset)
