@@ -47,6 +47,7 @@ def define_flags():
   tf.app.flags.DEFINE_float("curriculum_bound", 0.15, "Move curriculum < this.")
   tf.app.flags.DEFINE_float("dropout", 0.15, "Dropout that much.")
   tf.app.flags.DEFINE_float("grad_noise_scale", 0.0, "Gradient noise scale.")
+  tf.app.flags.DEFINE_integer("max_steps", 0, "Quit after this many steps.")
   tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size.")
   tf.app.flags.DEFINE_integer("low_batch_size", 16, "Low batch size.")
   tf.app.flags.DEFINE_integer("steps_per_epoch", 200, "Steps per epoch.")
@@ -399,6 +400,10 @@ def train_loop(sess, model, batch_size, checkpoint_dir):
     timer = Timer("running evaluation %s"  % global_step)
     run_evaluation(sess, model, batch_size)
     timer.done()
+
+    global_step, = sess.run( [model.global_step])
+    if FLAGS.max_steps and global_step  > FLAGS.max_steps:
+      break
 
 def start_and_train():
   """Train the model."""
