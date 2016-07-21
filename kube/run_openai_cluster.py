@@ -19,15 +19,22 @@ parser.add_argument('gpuoff', nargs='?', type=int, default=0)
 
 EXPERIMENT = 'neural-gpu'
 
+def to_str(params):
+    return '-'.join(['%s=%s' % (k, params[k]) for k in params if k != 'random_seed'])
+
 def short_name(params):
     return hashlib.sha224(str(params)).hexdigest()[:10]
 
-def run_with_options_commands(params):
+def build_command(params, label):
     internal_command = args.program + ' ' + ' '.join('--%s=%s' % vs for vs in params.items())
-    return internal_command
+
+    train_dir = '~/neural-gpu/%s/%s' % (label, to_str(params))
+    command = 'TRAIN_DIR=%s; mkdir -p `dirname $TRAIN_DIR` && exec %s --train_dir=$TRAIN_DIR' % (train_dir, internal_command)
+
+    return command
 
 def start_job(param_sets,label):
-    commands = [run_with_options_commands(params) for params in param_sets]
+    commands = [build_command(params, label) for params in param_sets]
     subprocess.check_call(['openai-cluster','-vv','start_batch','-l',label,'--num-gpus','1']+commands)
 
 def main(param_sets):
