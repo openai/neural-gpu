@@ -50,7 +50,7 @@ class Run(dict):
             del d[k]
         return '-'.join('%s=%s' % (a, b) for (a, b) in d.items())
 
-    def get_str(self, metric):
+    def get_value(self, metric):
         if '.' in metric:
             metric, key = metric.split('.')
         else:
@@ -58,8 +58,19 @@ class Run(dict):
         data = self[metric][self.task]
         res = data[key]
         if isinstance(res, list):
-            res = np.median(data[key])
-        return '%0.2f (%d)' % (data['fraction'], len(data['first-time']))
+            res = int(np.median([x or 200000 for x in data[key]]) / 100)
+            if res == 2000:
+                res = np.inf
+        return res
+
+def value_to_str(val):
+    if val == np.inf:
+        res = '$\\infty$'
+    elif isinstance(val, float):
+        res = str(int(val*100)) + r'\%'
+    else:
+        res = str(val)
+    return res
 
 def load_all_data(dirname):
     files = glob.glob(os.path.join(dirname, '*'))
@@ -90,14 +101,15 @@ def texify(s):
 
 def table_to_str(rows, tasks, metric):
     ans = []
-    ans.append(' & '.join(['Name'] + list(tasks)))
+    ans.append(' & '.join(['Name', 'Mean'] + list(tasks)))
     for version, runs in sorted(rows.items()):
+        values = [runs[t].get_value(metric) if t in runs else '' for t in tasks]
         row_strs = ([texify(version.split('=',1)[1])] +
-                    [runs[t].get_str(metric) if t in runs else ''
-                     for t in tasks])
+                    [value_to_str(np.mean(values))] +
+                    [value_to_str(value) for value in values])
         ans.append(' & '.join(row_strs))
     interior =  '\\\\\n'.join(ans)
-    table = r'''\begin{tabular}{l%s}
+    table = r'''\begin{tabular}{lc%s}
 %s
 \end{tabular}''' % ('c'*len(tasks), interior)
     return table
