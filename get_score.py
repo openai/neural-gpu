@@ -21,6 +21,8 @@ parser.add_argument("--key", type=str, default=RESULT)
 parser.add_argument("--task", type=str, default='plot')
 parser.add_argument("--title", type=str, default='')
 parser.add_argument("--savedir", type=str, default='')
+parser.add_argument("--min-length", type=int, default=2)
+parser.add_argument("--dirs-in-name", type=int, default=2)
 parser.add_argument("--one-legend", type=bool, default=True)
 parser.add_argument("--skip-dir", type=bool, default=False)
 parser.add_argument("--median", action='store_true')
@@ -33,6 +35,8 @@ def get_results_dict(fname):
     with open(fname) as f:
         for line in f:
             words = line.split()
+            if not words: # Blank line on restart
+                continue
             loc, val = words[:2]
             taskname = words[2]
             if taskname not in answer:
@@ -176,7 +180,7 @@ def get_tasks(key):
 
 def get_key(fname):
     fname = fname.split('-seed')[0]
-    return '/'.join(fname.split('/')[-2:])
+    return '/'.join(fname.split('/')[-args.dirs_in_name:])
 
 def get_prefix(fileset):
     longest_cp = os.path.commonprefix(fileset)
@@ -196,7 +200,7 @@ def plot_all(func, scores, column=None, taskset=None):
                 continue
             columns = [score.get_scores(column, task)
                        for score in d[key]]
-            data = pd.DataFrame([c for c in columns if c is not None and len(c) > 1]).T
+            data = pd.DataFrame([c for c in columns if c is not None and len(c) >= args.min_length]).T
             if not len(data):
                 func(score.args_str(), None)
                 continue
@@ -218,14 +222,16 @@ def get_print_results(scores, column, avg=5):
     assert len(set(x.key for x in scores)) == 1
     ans = {}
     for task in scores[0].tasknames:
-        ans[task] = {}
         columns = [score.get_scores(column, task) for score in scores]
         columns = [c for c in columns if c is not None]
+        if not columns:
+            continue
         last_values = [np.mean(c.values[-avg:]).item() for c in columns]
-        ans[task]['last'] = last_values
         filt = get_filter(column)
         times = [c.index[np.where(filt(c))] for c in columns]
         first_time = [t[0].item() if len(t) else None for t in times]
+        ans[task] = {}
+        ans[task]['last'] = last_values
         ans[task]['first-time'] = first_time
         ans[task]['fraction'] = len([x for x in first_time if x is not None]) * 1. / len(times)
 
