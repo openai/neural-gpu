@@ -26,9 +26,9 @@ def run_with_options_commands(params):
     internal_command = args.program + ' ' + ' '.join('--%s=%s' % vs for vs in params.items())
     return internal_command
 
-def start_job(param_sets):
+def start_job(param_sets,label):
     commands = [run_with_options_commands(params) for params in param_sets]
-    subprocess.check_call(['openai-cluster','-vv','start_batch']+commands)
+    subprocess.check_call(['openai-cluster','-vv','start_batch','-l',label,'--num-gpus','1']+commands)
 
 def main(param_sets):
     global args
@@ -37,7 +37,7 @@ def main(param_sets):
     if args.kill or args.dry or args.local or args.force:
         raise NotImplementedError()
 
-    start_job(param_sets)
+    start_job(param_sets, args.label)
 
 if __name__ == '__main__':
     main([{'do_batchnorm': 0, 'task': 'scopy,sdup', 'progressive_curriculum': True, 'do_outchoice': True}])
