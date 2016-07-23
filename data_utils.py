@@ -211,18 +211,15 @@ class AlignedOpGenerator(OpGenerator):
 class AlignedToughAddGenerator(AlignedOpGenerator, ToughAddGenerator):
   pass
 
-class ToughUnpaddedAddGenerator(UnpaddedOpGenerator, ToughAddGenerator):
-  pass
-
 generators.update(dict(badde=AlignedOpGenerator(2, operator.add, 11),
                        qadde=AlignedOpGenerator(4, operator.add, 12),
                        adde=AlignedOpGenerator(10, operator.add, 13),
                        baddet=AlignedToughAddGenerator(2, 11),
                        qaddet=AlignedToughAddGenerator(4, 12),
                        addet=AlignedToughAddGenerator(10, 13),
-                       baddzt=ToughUnpaddedAddGenerator(2, 11),
-                       qaddzt=ToughUnpaddedAddGenerator(4, 12),
-                       addzt=ToughUnpaddedAddGenerator(10, 13),
+                       baddzt=ToughAddGenerator(2, 11, False),
+                       qaddzt=ToughAddGenerator(4, 12, False),
+                       addzt=ToughAddGenerator(10, 13, False),
 ))
 
 class FGenerator(DataGenerator):
