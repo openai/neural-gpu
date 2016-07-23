@@ -114,12 +114,12 @@ class DataGenerator(object):
 
 class OpGenerator(DataGenerator):
   min_length = 3
-  zero_pad = True
 
-  def __init__(self, base, f, sep):
+  def __init__(self, base, f, sep, zero_pad=True):
     self.base = base
     self.f = f
     self.sep = sep
+    self.zero_pad = zero_pad
 
   def is_valid_length(self, l):
     return l%2 == 1 and l > self.min_length
@@ -153,18 +153,15 @@ generators.update(dict(badd=OpGenerator(2, operator.add, 11),
                        qmul=OpGenerator(4, operator.mul, 15),
                        mul=OpGenerator(10, operator.mul, 16),))
 
-class UnpaddedOpGenerator(OpGenerator):
-  zero_pad = False
-
-generators.update(dict(baddz=UnpaddedOpGenerator(2, operator.add, 11),
-                       qaddz=UnpaddedOpGenerator(4, operator.add, 12),
-                       addz=UnpaddedOpGenerator(10, operator.add, 13),
-                       bmulz=UnpaddedOpGenerator(2, operator.mul, 14),
-                       qmulz=UnpaddedOpGenerator(4, operator.mul, 15),
-                       mulz=UnpaddedOpGenerator(10, operator.mul, 16),))
+generators.update(dict(baddz=OpGenerator(2, operator.add, 11, False),
+                       qaddz=OpGenerator(4, operator.add, 12, False),
+                       addz=OpGenerator(10, operator.add, 13, False),
+                       bmulz=OpGenerator(2, operator.mul, 14, False),
+                       qmulz=OpGenerator(4, operator.mul, 15, False),
+                       mulz=OpGenerator(10, operator.mul, 16, False),))
 
 class ToughAddGenerator(OpGenerator):
-  def __init__(self, base, sep):
+  def __init__(self, base, sep, zero_pad=True):
     super(ToughAddGenerator, self).__init__(base, operator.add, sep)
 
   def _rand_inputs(self, k):
@@ -325,6 +322,8 @@ generators.update(dict(scopy=CopyGenerator(10),
                        sbaddet=TSAOG(2, 11),
                        sbadd=SpacedOpGenerator(2, operator.add, 11),
                        sbaddt=TSOG(2, 11),
+                       sbaddz=SpacedOpGenerator(2, operator.add, 11, False),
+                       sbaddzt=TSOG(2, 11, False),
                        ))
 
 
