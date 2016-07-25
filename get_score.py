@@ -31,6 +31,8 @@ parser.add_argument('files', type=str, nargs='+',
                     help='Log files to examine')
 
 def get_results_dict(fname):
+    if not os.path.exists(fname):
+        return {}
     answer = {}
     with open(fname) as f:
         for line in f:
@@ -180,6 +182,7 @@ def get_tasks(key):
 
 def get_key(fname):
     fname = fname.split('-seed')[0]
+    fname = fname.replace('max_steps=200000-', '')
     return '/'.join(fname.split('/')[-args.dirs_in_name:])
 
 def get_prefix(fileset):
@@ -242,7 +245,7 @@ def construct_parsed_data(scores, columns, save_dir):
     for s in scores:
         d.setdefault(s.key, []).append(s)
 
-    for key in d:
+    for i, key in enumerate(d):
         ans = {}
         ans['metadata'] = dict(commandline=d[key][0].commandline(),
                                count = len(d[key]),
@@ -252,14 +255,15 @@ def construct_parsed_data(scores, columns, save_dir):
             ans[col] = get_print_results(d[key], col)
         with open(os.path.join(save_dir, key), 'w') as f:
             print(yaml.safe_dump(ans), file=f)
-
+        print("Done %s/%s" % (i+1, len(d)))
 
 if __name__ == '__main__':
     args =  parser.parse_args()
     all_tasks = sorted(set(x for file in args.files for x in get_tasks(get_key(file))))
     keys = args.key.split(',')
     prefix = get_prefix(args.files)
-    scores = [Scores(f, prefix=prefix) for f in args.files]
+    scores = [Scores(f, prefix=prefix) for f in args.files
+              if os.path.exists(os.path.join(f, 'log0')) ]
     if args.task == 'parse':
         if args.savedir:
             construct_parsed_data(scores, keys, args.savedir)
