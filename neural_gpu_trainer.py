@@ -94,6 +94,7 @@ def define_flags():
   tf.app.flags.DEFINE_integer("input_height", 1, "Input height.")
 
   tf.app.flags.DEFINE_bool("progressive_curriculum", False, "Whether to use progressive curriculum.")
+  tf.app.flags.DEFINE_bool("taskid", False, "Feed task id to algorithm")
 
   tf.app.flags.DEFINE_integer("do_globalsum", 0, "Feed global sum to everyone.")
 

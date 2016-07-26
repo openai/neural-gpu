@@ -199,6 +199,8 @@ def indexer_block1(cur, indices):
 class NeuralGPUAtSize(object):
   """Instantiate the NeuralGPU at a given block size."""
   def __init__(self, model, length, adam):
+    self.ntasks = 4
+
     self.config = model.config
     self.length = length
     # batch_size x length x height
@@ -261,7 +263,11 @@ class NeuralGPUAtSize(object):
           global_info = conv_linear(basic_global_info, 1, 1, FLAGS.do_globalsum,
                                     "globalsum", self.initializer)
           extras.append(mytf.broadcast_as(global_info, cur, [1,2]))
-
+        if FLAGS.taskid:
+          # bs x 1 x 1 x ntasks
+          task = tf.one_hot(tf.to_int32(mytf.expand_dims_by_k(self.task, 2)),
+                            self.ntasks)
+          extras.append(mytf.broadcast_as(task, cur, [1,2]))
 
         if (FLAGS.do_shifter == 1 or
             (FLAGS.do_shifter == 2 and it == 0) or
