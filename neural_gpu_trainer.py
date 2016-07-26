@@ -36,6 +36,12 @@ import neural_gpu
 import neural_curriculum
 import mytf
 
+# XXX backwards compatibility hack
+old_true_flags = ['--progressive_curriculum']
+for f in old_true_flags:
+  if f + '=True' in sys.argv:
+    sys.argv[sys.argv.index(f+'=True')] = f+'=1'
+
 def define_flags():
   tf.app.flags.DEFINE_float("lr", 0.001, "Learning rate.")
   tf.app.flags.DEFINE_float("init_weight", 1.0, "Initial weights deviation.")
@@ -93,7 +99,7 @@ def define_flags():
   tf.app.flags.DEFINE_bool("do_layers", False, "Expose output for all layers.")
   tf.app.flags.DEFINE_integer("input_height", 1, "Input height.")
 
-  tf.app.flags.DEFINE_bool("progressive_curriculum", False, "Whether to use progressive curriculum.")
+  tf.app.flags.DEFINE_integer("progressive_curriculum", 0, "Whether to use progressive curriculum.")
   tf.app.flags.DEFINE_bool("taskid", False, "Feed task id to algorithm")
 
   tf.app.flags.DEFINE_integer("do_globalsum", 0, "Feed global sum to everyone.")
@@ -240,6 +246,8 @@ def initialize(sess, checkpoint_dir=None):
     #curriculum = neural_curriculum.MixedCurriculum(data_generators, model.config)
   if FLAGS.progressive_curriculum:
     curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config)
+    if FLAGS.progressive_curriculum == 2:
+      curriculum.decrease = True
   else:
     curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
   model.curriculum = curriculum

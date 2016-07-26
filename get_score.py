@@ -203,7 +203,8 @@ def plot_all(func, scores, column=None, taskset=None):
                 continue
             columns = [score.get_scores(column, task)
                        for score in d[key]]
-            data = pd.DataFrame([c for c in columns if c is not None and len(c) >= args.min_length]).T
+            median_len = np.median([len(c) for c in columns if c is not None])
+            data = pd.DataFrame([c for c in columns if c is not None and len(c) >= median_len / 2 and len(c) >= args.min_length]).T
             if not len(data):
                 func(score.args_str(), None)
                 continue
@@ -219,7 +220,7 @@ def get_filter(column):
     if column == 'len':
         return lambda x: x == 41
     else:
-        return lambda x: x == 0
+        return lambda x: x < 0.01
 
 def get_print_results(scores, column, avg=5):
     assert len(set(x.key for x in scores)) == 1
@@ -282,7 +283,9 @@ if __name__ == '__main__':
         pylab.suptitle(title)
         for ki, key in enumerate(keys):
             for i, task in enumerate(all_tasks):
-                pylab.subplot(len(keys), len(all_tasks), ki*len(all_tasks) + i+1)
+                plot_index = ki*len(all_tasks) + i+1
+                print("Subplot %s/%s" % (plot_index, len(all_tasks)*len(keys)))
+                pylab.subplot(len(keys), len(all_tasks), plot_index)
                 plot_start(key)
                 plot_all(plot_results, scores, column=key, taskset = [task])
                 if not args.one_legend or (ki == len(keys)-1 and i == len(all_tasks)-1):

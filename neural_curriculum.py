@@ -130,6 +130,7 @@ class GeneralizeCurriculum(Curriculum):
 
 class BetterCurriculum(Curriculum):
   rand_prob = 0.2
+  decrease = False
 
   def draw_generator(self, task=None):
     if task is not None:
@@ -138,6 +139,13 @@ class BetterCurriculum(Curriculum):
     if unsolved and np.random.random() > self.rand_prob:
       return unsolved[0]
     return np.random.choice(self.generators)
+
+  def consider_extending_for_task(self, record, taskid):
+    if record.avg_seq_err > self.model_config.curriculum_bound:
+      if self.max_cur_lengths[taskid] == self.max_length and self.decrease:
+        self.max_cur_lengths[taskid] -= 1
+      return 0
+    return super(BetterCurriculum, self).consider_extending_for_task(record, taskid)
 
 class NeuralGPUResult(object):
   grad_norm = None
@@ -286,7 +294,7 @@ class ResultsRecordPerTask(object):
 
   @property
   def avg_err(self):
-    return self.err / self.total
+    return self.err / (self.total or 1)
 
   @property
   def avg_seq_err(self):
