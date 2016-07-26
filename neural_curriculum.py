@@ -260,6 +260,11 @@ class ResultsRecordPerTask(object):
       self.total += tot
 
   @property
+  def safe_num_below(self):
+    # If we happen to not have any samples within the curriculum, don't crash
+    return self.num_below or 1.
+
+  @property
   def avg_binary_gap(self):
     return self.binary_gap / self.num_batches
 
@@ -273,11 +278,11 @@ class ResultsRecordPerTask(object):
 
   @property
   def avg_loss(self):
-    return self.loss / self.num_below
+    return self.loss / self.safe_num_below
 
   @property
   def avg_ppx(self):
-    return data_utils.safe_exp(self.loss / self.num_below)
+    return data_utils.safe_exp(self.loss / self.safe_num_below)
 
   @property
   def avg_err(self):
@@ -285,4 +290,4 @@ class ResultsRecordPerTask(object):
 
   @property
   def avg_seq_err(self):
-    return self.seq_err / (self.num_below * self.batch_size)
+    return self.seq_err / (self.safe_num_below * self.batch_size)
