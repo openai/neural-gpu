@@ -110,10 +110,11 @@ def conv_gru(mem, kw, kh, nmaps, cutoff, prefix, initializer, extras=[]):
   gate = sigmoid_cutoff(conv_lin(mem, "g", 1), cutoff)
   return gate * mem + (1 - gate) * candidate
 
-def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, initializer, nconvs=2):
+def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, initializer, nconvs=2,
+                 extras = []):
   old = cur
   for i in xrange(nconvs):
-    cur = conv_linear(cur, kw, kh, nmaps, "cgru_%d_%s" % (i, suffix),
+    cur = conv_linear(extras + [cur], kw, kh, nmaps, "cgru_%d_%s" % (i, suffix),
                       initializer)
     if i == nconvs - 1:
       cur = old + cur
@@ -396,7 +397,7 @@ class NeuralGPUAtSize(object):
     # Final loss: cross-entropy + shared parameter relaxation part.
     relax_dist, self.model.avg_op = relaxed_distance(self.config.rx_step)
     total_loss = perp_loss + relax_dist * self.model.pull
-    if FLAGS.do_outchoice:
+    if FLAGS.output_layer == 2:
       total_loss += 0.001 * time_loss
     if FLAGS.do_binarization:
       binary_gaps = 1 - tf.abs(self.layers)
