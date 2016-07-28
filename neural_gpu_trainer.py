@@ -64,7 +64,7 @@ def define_flags():
   tf.app.flags.DEFINE_integer("max_length", 41, "Maximum length.")
   tf.app.flags.DEFINE_integer("rx_step", 6, "Relax that many recursive steps.")
   tf.app.flags.DEFINE_integer("random_seed", 125459, "Random seed.")
-  tf.app.flags.DEFINE_integer("time_till_ckpt", 30, "How many tests per checkpoint")
+  tf.app.flags.DEFINE_integer("time_till_ckpt", 1, "How many tests per checkpoint")
   tf.app.flags.DEFINE_integer("nconvs", 2, "How many convolutions / 1 step.")
   tf.app.flags.DEFINE_integer("kw", 3, "Kernel width.")
   tf.app.flags.DEFINE_integer("kh", 3, "Kernel height.")
@@ -76,7 +76,7 @@ def define_flags():
   tf.app.flags.DEFINE_bool("animate", False, "Whether to produce an animation.")
   tf.app.flags.DEFINE_float("smooth_grad", 0.0, "Whether to avoid clipping gradient")
   tf.app.flags.DEFINE_float("smooth_grad_tanh", 0.0, "Whether to avoid clipping tanh gradient")
-  tf.app.flags.DEFINE_string("task", "rev", "Which task are we learning?")
+  tf.app.flags.DEFINE_string("task", "badd", "Which task are we learning?")
   tf.app.flags.DEFINE_string("train_dir", "/tmp/neural", "Directory to store models.")
 
   tf.app.flags.DEFINE_string("model_class", "neural_gpu.NeuralGPU", "Model class")
@@ -401,7 +401,8 @@ def train_loop(sess, model, batch_size, checkpoint_dir):
       checkpoint_path = os.path.join(checkpoint_dir, "neural_gpu.ckpt")
       global_step, = sess.run( [model.global_step])
       model.saver.save(sess, checkpoint_path,
-                       global_step=model.global_step)
+                       global_step=model.global_step,
+                       write_meta_graph=False)
       timer.done()
 
     # Run evaluation.
