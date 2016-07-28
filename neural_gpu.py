@@ -452,7 +452,7 @@ class NeuralGPUAtSize(object):
       feed_out['layers'] = self.layers
     if FLAGS.do_binarization:
       feed_out['binary_gap'] = self.binary_gap
-    if FLAGS.do_outchoice:
+    if hasattr(self, 'probs'):
       feed_out['probs'] = self.probs
     feed_out['loss'] = self.loss
     feed_out['layer_outputs'] = self.layer_outputs
