@@ -130,7 +130,7 @@ class GeneralizeCurriculum(Curriculum):
 
 class BetterCurriculum(Curriculum):
   rand_prob = 0.2
-  decrease = False
+  decrease_threshold = 1
 
   def draw_generator(self, task=None):
     if task is not None:
@@ -141,9 +141,11 @@ class BetterCurriculum(Curriculum):
     return np.random.choice(self.generators)
 
   def consider_extending_for_task(self, record, taskid):
+    if (self.max_cur_lengths[taskid] == self.max_length and
+        record.avg_seq_err > self.decrease_threshold):
+      self.max_cur_lengths[taskid] -= 1
+      return 0
     if record.avg_seq_err > self.model_config.curriculum_bound:
-      if self.max_cur_lengths[taskid] == self.max_length and self.decrease:
-        self.max_cur_lengths[taskid] -= 1
       return 0
     return super(BetterCurriculum, self).consider_extending_for_task(record, taskid)
 

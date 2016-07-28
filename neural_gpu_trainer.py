@@ -247,7 +247,7 @@ def initialize(sess, checkpoint_dir=None):
   if FLAGS.progressive_curriculum:
     curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config)
     if FLAGS.progressive_curriculum == 2:
-      curriculum.decrease = True
+      curriculum.decrease_threshold = 0.01
   else:
     curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
   model.curriculum = curriculum

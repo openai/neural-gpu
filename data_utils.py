@@ -214,6 +214,7 @@ class AlignedToughAddGenerator(AlignedOpGenerator, ToughAddGenerator):
 generators.update(dict(badde=AlignedOpGenerator(2, operator.add, 11),
                        qadde=AlignedOpGenerator(4, operator.add, 12),
                        adde=AlignedOpGenerator(10, operator.add, 13),
+                       bmule=AlignedOpGenerator(2, operator.mul, 14),
                        baddet=AlignedToughAddGenerator(2, 11),
                        qaddet=AlignedToughAddGenerator(4, 12),
                        addet=AlignedToughAddGenerator(10, 13),
@@ -316,11 +317,13 @@ generators.update(dict(scopy=CopyGenerator(10),
                        sbcopy=CopyGenerator(2),
                        sbdup=DupGenerator(2),
                        sbadde=SpacedAlignedOpGenerator(2, operator.add, 11),
+                       sbmule=SpacedAlignedOpGenerator(2, operator.mul, 14),
                        sbaddet=TSAOG(2, 11),
                        sbadd=SpacedOpGenerator(2, operator.add, 11),
                        sbaddt=TSOG(2, 11),
                        sbaddz=SpacedOpGenerator(2, operator.add, 11, False),
                        sbaddzt=TSOG(2, 11, False),
+                       sbmul=SpacedOpGenerator(2, operator.mul, 14),
                        ))
 
 
