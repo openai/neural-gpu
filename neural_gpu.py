@@ -248,7 +248,7 @@ class NeuralGPUAtSize(object):
 
     keep_prob = 1.0 - tf.to_float(self.do_training) * (self.config.dropout * 8.0 / self.length)
     cur = first
-    layers = [first]
+    layers = []
     attention_probs_list = []
     self.indices = {}
     for it in xrange(self.length):
@@ -322,8 +322,7 @@ class NeuralGPUAtSize(object):
         layers.append(cur)
 
     self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
-    self.layers = tf.pack(layers)
-    return layers
+    self.layers = tf.pack([l[:,:,:1,:] for l in layers])
 
   def _get_first_layer(self, mask):
     """Turn the input into a batch_size x length x height x nmaps tensor"""
@@ -362,11 +361,11 @@ class NeuralGPUAtSize(object):
     self.construct_all_layers(first, mask)
 
     # Final convolution to get logits, list outputs.
-    layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, noclass, "output", self.initializer)
-    outputs = mytf.safe_squeeze(layer_output, -2) # (depth+1) x batch x length x noclass
+    layer_output = conv_linear(self.layers, 1, 1, noclass, "output", self.initializer)
+    outputs = mytf.safe_squeeze(layer_output, -2) # depth x batch x length x noclass
 
     if FLAGS.output_layer == 0:
-      output = tf.reduce_sum(outputs[1:,:,:,:] * scales, 0)
+      output = tf.reduce_sum(outputs * scales, 0)
     elif FLAGS.output_layer == 1:
       output = outputs[-1,:,:,:]
     elif FLAGS.output_layer == 2:
@@ -374,16 +373,16 @@ class NeuralGPUAtSize(object):
       # Do this in two stages to have smaller variables
       moo = tf.reduce_mean(self.layers, 2)
       # depth x bs
-      probs = tf.reduce_mean(moo[1:,:,:,:] * weighting, [2,3])
+      probs = tf.reduce_mean(moo * weighting, [2,3])
       self.probs = tf.transpose(mytf.softmax(tf.transpose(probs)))
       
-      output = tf.reduce_sum(outputs[1:,:,:,:]*mytf.expand_dims_by_k(self.probs, 2), 0)
+      output = tf.reduce_sum(outputs*mytf.expand_dims_by_k(self.probs, 2), 0)
       # bs
       ts = tf.range(mytf.shape_list(self.probs)[0])
       times = tf.reduce_sum(self.probs * mytf.expand_dims_by_k(tf.to_float(ts), 1), 0)
       time_loss = tf.reduce_mean(times)
     elif FLAGS.output_layer == 3:
-      output = tf.reduce_mean(outputs[1:,:,:,:], 0)
+      output = tf.reduce_mean(outputs, 0)
     else:
       raise ValueError("Unknown value for FLAGS.output_layer")
     self.layer_outputs = mytf.softmax(outputs)
