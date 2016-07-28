@@ -363,9 +363,12 @@ class NeuralGPUAtSize(object):
     # Final convolution to get logits, list outputs.
     layer_output = conv_linear(self.layers[:,:,:,:1,:], 1, 1, noclass, "output", self.initializer)
     outputs = mytf.safe_squeeze(layer_output, -2) # (depth+1) x batch x length x noclass
-    if FLAGS.do_lastout:
+
+    if FLAGS.output_layer == 0:
+      output = tf.reduce_sum(outputs[1:,:,:,:] * scales, 0)
+    elif FLAGS.output_layer == 1:
       output = outputs[-1,:,:,:]
-    elif FLAGS.do_outchoice:
+    elif FLAGS.output_layer == 2:
       weighting = tf.get_variable("Probs", [self.config.height, self.config.nmaps])
       # Do this in two stages to have smaller variables
       moo = tf.reduce_mean(self.layers, 2)
@@ -378,8 +381,10 @@ class NeuralGPUAtSize(object):
       ts = tf.range(mytf.shape_list(self.probs)[0])
       times = tf.reduce_sum(self.probs * mytf.expand_dims_by_k(tf.to_float(ts), 1), 0)
       time_loss = tf.reduce_mean(times)
+    elif FLAGS.output_layer == 3:
+      output = tf.reduce_mean(outputs[1:,:,:,:], 0)
     else:
-      output = tf.reduce_sum(outputs[1:,:,:,:] * scales, 0)
+      raise ValueError("Unknown value for FLAGS.output_layer")
     self.layer_outputs = mytf.softmax(outputs)
     self.output = mytf.softmax(output) # batch_size x length x noclass
 
