@@ -64,7 +64,8 @@ def define_flags():
   tf.app.flags.DEFINE_integer("max_length", 41, "Maximum length.")
   tf.app.flags.DEFINE_integer("rx_step", 6, "Relax that many recursive steps.")
   tf.app.flags.DEFINE_integer("random_seed", 125459, "Random seed.")
-  tf.app.flags.DEFINE_integer("time_till_ckpt", 1, "How many tests per checkpoint")
+  tf.app.flags.DEFINE_integer("time_till_ckpt", 30, "How many tests per checkpoint")
+  tf.app.flags.DEFINE_integer("time_till_eval", 2, "Number of steps between evals")
   tf.app.flags.DEFINE_integer("nconvs", 2, "How many convolutions / 1 step.")
   tf.app.flags.DEFINE_integer("kw", 3, "Kernel width.")
   tf.app.flags.DEFINE_integer("kh", 3, "Kernel height.")
@@ -93,6 +94,7 @@ def define_flags():
   tf.app.flags.DEFINE_integer("do_shifter", 0, "Whether shift stuff at each layer.")
 
   tf.app.flags.DEFINE_bool("print_one", True, "Print one example each evaluation")
+  tf.app.flags.DEFINE_bool("normalize", True, "Normalize activations in initialization")
 
   tf.app.flags.DEFINE_bool("output_layer", 0, "Which layer to output.")
   tf.app.flags.DEFINE_integer("input_height", 1, "Input height.")
@@ -231,7 +233,8 @@ def initialize(sess, checkpoint_dir=None):
   model = cls(config)
   data.print_out("Created model.")
   sess.run(tf.initialize_all_variables())
-  model.renormalize(sess)
+  if FLAGS.normalize:
+    model.renormalize(sess)
   data.print_out("Initialized variables.")
 
   # Load model from parameters if a checkpoint exists.
@@ -379,6 +382,7 @@ def run_evaluation(sess, model, batch_size):
 
 def train_loop(sess, model, batch_size, checkpoint_dir):
   time_till_ckpt = FLAGS.time_till_ckpt
+  time_till_eval = FLAGS.time_till_eval
   # Main training loop.
   accuracies = [1e4]*3
   while True:
@@ -405,9 +409,12 @@ def train_loop(sess, model, batch_size, checkpoint_dir):
 
     # Run evaluation.
     global_step, = sess.run( [model.global_step])
-    timer = Timer("running evaluation %s"  % global_step)
-    run_evaluation(sess, model, batch_size)
-    timer.done()
+    time_till_eval -= 1
+    if time_till_eval == 0:
+      time_till_eval = FLAGS.time_till_eval
+      timer = Timer("running evaluation %s"  % global_step)
+      run_evaluation(sess, model, batch_size)
+      timer.done()
 
     global_step, = sess.run( [model.global_step])
     if FLAGS.max_steps and global_step  > FLAGS.max_steps:
