@@ -10,12 +10,17 @@ import glob
 import scipy.signal
 import os
 import yaml
+import shutil
+import joblib
+import functools
 
 import collections
+
 
 parser = argparse.ArgumentParser(description='Get scores')
 
 RESULT='score'
+
 
 parser.add_argument("--key", type=str, default=RESULT)
 parser.add_argument("--task", type=str, default='plot')
@@ -25,11 +30,30 @@ parser.add_argument("--min-length", type=int, default=2)
 parser.add_argument("--dirs-in-name", type=int, default=2)
 parser.add_argument("--one-legend", type=bool, default=True)
 parser.add_argument("--skip-dir", type=bool, default=False)
+parser.add_argument("--recache", action='store_true')
 parser.add_argument("--median", action='store_true')
 parser.add_argument("--smoothing", type=int, default='1')
 parser.add_argument('files', type=str, nargs='+',
                     help='Log files to examine')
 
+memory = joblib.Memory(cachedir='/home/ecprice/neural_gpu/cache',
+                       verbose=1)
+
+def recache(f):
+    g = memory.cache(f)
+    @functools.wraps(g)
+    def cached(*args, **kwargs):
+        if recache.do_recache:
+            try:
+                shutil.rmtree(g.get_output_dir(*args, **kwargs)[0])
+            except OSError: # Not actually in cache
+                pass
+        return g(*args, **kwargs)
+    return cached
+
+recache.do_recache = False
+
+@recache
 def get_results_dict(fname):
     if not os.path.exists(fname):
         return {}
@@ -56,6 +80,30 @@ def get_scores_dict(fname):
                     yield d
                 except ValueError:
                     break
+
+@recache
+def get_dfs(dirname, tasknames):
+    fname = dirname+'/steps'
+    if not os.path.exists(fname):
+        fname = dirname+'/log0'
+    data_series = {t:{} for t in tasknames}
+    for d in get_scores_dict(fname):
+        for key in d:
+            vals = d[key].split('/')
+            if len(vals) == 1:
+                vals *= len(tasknames)
+            elif len(vals) < len(tasknames): #Failed to get data for one
+                vals = [np.nan]*len(tasknames)
+            for val, task in zip(vals, tasknames):
+                data_series[task].setdefault(key, []).append(float(val))
+    dfs = {}
+    for task in data_series:
+        try:
+            dfs[task] = pd.DataFrame(data_series[task], index=data_series[task]['step'])
+            dfs[task] = dfs[task].drop_duplicates(subset='step', keep='last')
+        except KeyError: #Hasn't gotten to 'step' line yet
+            pass
+    return dfs
 
 class Scores(object):
     def __init__(self, dirname, tasknames=None, prefix=''):
@@ -110,22 +158,7 @@ class Scores(object):
     def _load_scores(self):
         if self.dfs:
             return
-        data_series = {t:{} for t in self.tasknames}
-        fname = self.dirname+'/steps'
-        if not os.path.exists(fname):
-            fname = self.dirname+'/log0'
-        for d in get_scores_dict(fname):
-            for key in d:
-                vals = d[key].split('/')
-                if len(vals) == 1:
-                    vals *= len(self.tasknames)
-                for val, task in zip(vals, self.tasknames):
-                    data_series[task].setdefault(key, []).append(float(val))
-        for task in data_series:
-            try:
-                self.dfs[task] = pd.DataFrame(data_series[task], index=data_series[task]['step'])
-            except KeyError: #Hasn't gotten to 'step' line yet
-                pass
+        self.dfs = get_dfs(self.dirname, self.tasknames)
 
     def commandline(self):
         return open(os.path.join(self.dirname, 'commandline')).read().split()
@@ -258,13 +291,18 @@ def construct_parsed_data(scores, columns, save_dir):
             print(yaml.safe_dump(ans), file=f)
         print("Done %s/%s" % (i+1, len(d)))
 
+@recache
+def is_valid_dir(f):
+    return os.path.exists(os.path.join(f, 'log0'))
+
 if __name__ == '__main__':
     args =  parser.parse_args()
+    recache.do_recache = args.recache
+    print("Started")
     all_tasks = sorted(set(x for file in args.files for x in get_tasks(get_key(file))))
     keys = args.key.split(',')
     prefix = get_prefix(args.files)
-    scores = [Scores(f, prefix=prefix) for f in args.files
-              if os.path.exists(os.path.join(f, 'log0')) ]
+    scores = [Scores(f, prefix=prefix) for f in args.files if is_valid_dir(f)]
     if args.task == 'parse':
         if args.savedir:
             construct_parsed_data(scores, keys, args.savedir)

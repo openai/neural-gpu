@@ -147,7 +147,11 @@ class BetterCurriculum(Curriculum):
       return 0
     if record.avg_seq_err > self.model_config.curriculum_bound:
       return 0
-    return super(BetterCurriculum, self).consider_extending_for_task(record, taskid)
+    val = super(BetterCurriculum, self).consider_extending_for_task(record, taskid)
+    # Don't stop us from decreasing learning rate here
+    if (self.max_cur_lengths[taskid] == self.max_length):
+      return 0
+    return val
 
 class NeuralGPUResult(object):
   grad_norm = None

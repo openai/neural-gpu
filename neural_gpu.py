@@ -79,6 +79,7 @@ class VariableInitializer(object):
       #print 'initial scaling %s %s : %s' % (k.op.name, ratio, result[k])
       ops.append(tf.assign(k, k * ratio))
     sess.run(ops)
+
 def conv_linear(arg, kw, kh, nout, prefix, initializer, bias=0):
   """Convolutional linear map."""
   strides = [1, 1, 1, 1]

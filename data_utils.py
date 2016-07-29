@@ -396,12 +396,16 @@ class TeeErr(object):
         self.file.flush()
         self.stderr.write(data)
 
+log_f = None
+
 def print_out(s, newline=True):
   """Print a message out and log it to file."""
+  global log_f
   if log_filename:
     try:
-      with gfile.GFile(log_filename, mode="a") as f:
-        f.write(s + ("\n" if newline else ""))
+      if log_f is None:
+        log_f = open(log_filename, 'a', 1)
+      log_f.write(s + ("\n" if newline else ""))
     # pylint: disable=bare-except
     except:
       sys.stdout.write("Error appending to %s\n" % log_filename)

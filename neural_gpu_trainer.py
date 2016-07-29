@@ -142,8 +142,8 @@ def log_parameters(checkpoint_dir):
   with open(os.path.join(checkpoint_dir, 'git-rev'), 'w') as f:
     subprocess.call(['git', 'rev-parse', 'HEAD'], stdout=f)
 
-  log_output = open(os.path.join(checkpoint_dir, 'results'), 'w', 1)
-  step_output = open(os.path.join(checkpoint_dir, 'steps'), 'w', 1)
+  log_output = open(os.path.join(checkpoint_dir, 'results'), 'a', 1)
+  step_output = open(os.path.join(checkpoint_dir, 'steps'), 'a', 1)
 
 def load_model(sess, checkpoint_dir):
   # possibly tf.reset_default_graph()
@@ -243,15 +243,22 @@ def initialize(sess, checkpoint_dir=None):
     data.print_out("Reading model parameters from %s"
                    % ckpt.model_checkpoint_path)
     model.saver.restore(sess, ckpt.model_checkpoint_path)
-
-    #curriculum = neural_curriculum.MixedCurriculum(data_generators, model.config)
-  if FLAGS.progressive_curriculum:
-    curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config)
-    if FLAGS.progressive_curriculum == 2:
-      curriculum.decrease_threshold = 0.01
+    try:
+      model.curriculum = yaml.load(open(os.path.join(checkpoint_dir, 'neural_gpu_curriculum.ckpt')))
+    except: #XXX hack
+      curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config)
+      if FLAGS.progressive_curriculum == 2:
+        curriculum.decrease_threshold = 0.01
+      model.curriculum = curriculum
   else:
-    curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
-  model.curriculum = curriculum
+      #curriculum = neural_curriculum.MixedCurriculum(data_generators, model.config)
+    if FLAGS.progressive_curriculum:
+      curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config)
+      if FLAGS.progressive_curriculum == 2:
+        curriculum.decrease_threshold = 0.01
+    else:
+      curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
+    model.curriculum = curriculum
 
   # Return the model and needed variables.
   return model
@@ -405,6 +412,8 @@ def train_loop(sess, model, batch_size, checkpoint_dir):
       model.saver.save(sess, checkpoint_path,
                        global_step=model.global_step,
                        write_meta_graph=False)
+      with open(os.path.join(checkpoint_dir, 'neural_gpu_curriculum.ckpt'), 'w') as f:
+        yaml.dump(model.curriculum, f)
       timer.done()
 
     # Run evaluation.
