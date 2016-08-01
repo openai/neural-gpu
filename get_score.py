@@ -326,7 +326,8 @@ if __name__ == '__main__':
                 pylab.subplot(len(keys), len(all_tasks), plot_index)
                 plot_start(key)
                 plot_all(plot_results, scores, column=key, taskset = [task])
-                if not args.one_legend or (ki == len(keys)-1 and i == len(all_tasks)-1):
+                if not args.one_legend or (ki == len(keys)-1 and
+                                           (i == len(all_tasks)-1 or 1)):
                     pylab.legend(loc=legend_locs.get(key, 0))
                 pylab.title('Task %s' % task)
                 pylab.ylim((0, None))
