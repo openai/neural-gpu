@@ -124,8 +124,11 @@ class Results(object):
                 table = [row[:min_length] for row in table]
                 answer[key] = np.median(table, axis=0)
             formatting = dict(step='%d', len='%d')
-            return ' '.join('%s %s' % (key,
-                                       formatting.get(key, '%0.3g') % v) for key, v in answer.items())
+            def fmt_val(val, key):
+                if isinstance(val, collections.Iterable):
+                    return '/'.join([fmt_val(v, key) for v in val])
+                return formatting.get(key, '%0.3g') % val
+            return ' '.join('%s %s' % (key, fmt_val(v, key)) for key, v in answer.items())
         else:
             if not self.results:
                 return 'No output found!'
