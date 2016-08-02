@@ -122,7 +122,7 @@ class OpGenerator(DataGenerator):
     self.zero_pad = zero_pad
 
   def is_valid_length(self, l):
-    return l%2 == 1 and l > self.min_length
+    return l%2 == 1 and l >= self.min_length
 
   def _rand_inputs(self, k):
     k = int(k)
@@ -243,7 +243,7 @@ class SpacedGenerator(DataGenerator):
   height=4
 
   def is_valid_length(self, l):
-    return super(SpacedGenerator, self).is_valid_length(l) and l > self.min_length + 1
+    return super(SpacedGenerator, self).is_valid_length(l) and l >= self.min_length
 
   def rand_pair(self, l):
     l2 = np.random.randint(self.min_length, l)
@@ -328,16 +328,42 @@ generators.update(dict(scopy=CopyGenerator(10),
                        ))
 
 
-class MixGenerator(DataGenerator):
-  def __init__(self, gens):
-    self.sets = gens
+class MultiOpGenerator(DataGenerator):
 
-  def rand_pair(self, length):
-    i = np.random.randint(len(self.sets))
-    return self.sets[i].rand_pair(length)
+  def __init__(self, base, f, sep, k, zero_pad=True):
+    self.base = base
+    self.f = f
+    self.sep = sep
+    self.k = k
+    self.zero_pad = zero_pad
+    self.min_length = 2*k - 1
 
-generators.update(dict(mix=MixGenerator([generators[x] for x in 'badd bmul'.split()]),
-                       ))
+  def is_valid_length(self, l):
+    return l%2 == 1 and l >= self.min_length
+
+  def _rand_inputs(self, k):
+    k = int(k)
+    n1 = random.randint(0, self.base**k-1)
+    n2 = random.randint(0, self.base**k-1)
+    return (n1, n2)
+
+  def rand_pair(self, l):
+    k = int((l-1 - 2*PADDING)//2)
+    n1, n2 = self._rand_inputs(k)
+    result = self.f(n1, n2)
+    inp = np.concatenate([[START] if PADDING else [],
+       to_base(n1, self.base, k if self.zero_pad else 1) + 1,
+       [self.sep],
+                          to_base(n2, self.base, k if self.zero_pad else 1) + 1,
+                          #[22] if PADDING else []
+    ])
+    outp = np.concatenate([#[START] if PADDING else [],
+            to_base(result, self.base, 2*k+1 if self.zero_pad else 1) + 1,
+                           #[22] if PADDING else []
+    ])
+    return inp, outp
+
+
 
 for k in generators:
   generators[k].name = k
