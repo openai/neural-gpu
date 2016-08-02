@@ -62,7 +62,7 @@ def grab_gpus(num_needed, t=5*60):
 
 
 def to_name(params):
-    return '-'.join(['%s=%s' % (k, params[k]) for k in params if k != 'random_seed'])
+    return '-'.join(['%s=%s' % (k, params[k]) for k in params if k not in ('random_seed', 'max_steps')])
 
 def create_screen_commands(session_label):
     return ['screen -S %s -d -m' % (session_label,)]
