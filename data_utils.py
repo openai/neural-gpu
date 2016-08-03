@@ -363,6 +363,7 @@ class MultiOpGenerator(DataGenerator):
 generators.update({'3badd':MultiOpGenerator(2, operator.add, 11, 3),
                    '3qadd':MultiOpGenerator(4, operator.add, 12, 3),
                    '3add':MultiOpGenerator(10, operator.add, 13, 3),
+                   '3bmul':MultiOpGenerator(2, operator.mul, 14, 3),
                    })
 
 
