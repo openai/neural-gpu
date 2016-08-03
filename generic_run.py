@@ -16,7 +16,7 @@ parser.add_argument('--dry', action='store_true', default=False)
 parser.add_argument('--local', action='store_true', default=False)
 parser.add_argument('--kill', action='store_true', default=False)
 parser.add_argument('--force', action='store_true', default=False)
-parser.add_argument('--use_empty', action='store_false', default=True)
+parser.add_argument('--use_full', action='store_true', default=False)
 parser.add_argument('--dir', type=str, default='models/neural_gpu')
 parser.add_argument('--program', type=str, default='python neural_gpu_trainer.py')
 parser.add_argument('paramoff', nargs='?', type=int, default=0)
@@ -37,7 +37,7 @@ def find_free_gpus(num_needed):
     all_gpu_status = cirrascale.client.get_gpu_status()
     free_gpu_status = {k:[g for g in v if g.available]
                        for k,v in all_gpu_status.items()}
-    if not args.use_empty:
+    if not args.use_full:
         free_gpu_status = {k:v for k,v in free_gpu_status.items()
                            if len(v) < 8}
     num_free = sum(map(len, free_gpu_status.values()))
