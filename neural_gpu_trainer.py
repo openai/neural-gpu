@@ -357,7 +357,8 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
 
   # Lower learning rate if we're worse than the last 3 checkpoints.
   # XXX improve this in a mixed setting
-  acc_perp = data.safe_exp(results_record.record_for_task[0].avg_loss)
+  first_record = sorted(results_record.record_for_task.items())[0][1]
+  acc_perp = data.safe_exp(first_record.avg_loss)
   if acc_perp > thresh:
     data.print_out("Lower learning rate: %s %s" % (acc_perp, thresh))
     sess.run(model.lr_decay_op)

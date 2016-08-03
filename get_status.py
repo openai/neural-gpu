@@ -7,6 +7,7 @@ import subprocess
 import collections
 import sys
 import threading
+import time
 import os
 
 import yaml
@@ -66,7 +67,9 @@ def load_log(dir):
         return lines[-1].strip()
     else:
         data = step_lines[-1].split()
-        return collections.OrderedDict(zip(data[::2], data[1::2]))
+        mapping = collections.OrderedDict(zip(data[::2], data[1::2]))
+        mapping['last_update'] = os.stat(fname).st_mtime
+        return mapping
 
 def locked_on_server(server):
     cmd = 'python models/neural_gpu/used_gpus.py'
@@ -94,6 +97,12 @@ class Results(object):
         else:
             return str(datetime.datetime.now() - start_time)
 
+    @property
+    def last_update(self):
+        vals = [res for res in self.results if isinstance(res, dict)]
+        last_t = max([v['last_update'] for v in vals])
+        return str(datetime.timedelta(seconds=time.time() - last_t))
+
     def _parse_logs(self):
         if hasattr(self, 'results'):
             return
@@ -119,10 +128,12 @@ class Results(object):
         if vals:
             answer = collections.OrderedDict()
             for key in vals[0]:
+                if key == 'last_update':
+                    continue
                 table = [list(map(float, v.get(key, 'nan').split('/'))) for v in vals]
                 min_length = min(map(len, table))
                 table = [row[:min_length] for row in table]
-                answer[key] = np.median(table, axis=0)
+                answer[key] = np.min(table, axis=0)
             formatting = dict(step='%d', len='%d')
             def fmt_val(val, key):
                 if isinstance(val, collections.Iterable):
@@ -149,7 +160,7 @@ class Results(object):
 
     def print_out(self, verbosity=1):
         to_print = {}
-        keys = set('argv age label locations'.split())
+        keys = set('argv age last_update label locations'.split())
         if verbosity >= 1:
             self._parse_logs()
             self._running_programs()
