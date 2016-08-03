@@ -19,7 +19,7 @@ import random
 import sys
 import time
 import operator
-
+import functools
 import numpy as np
 import tensorflow as tf
 
@@ -330,27 +330,25 @@ generators.update(dict(scopy=CopyGenerator(10),
 
 class MultiOpGenerator(DataGenerator):
 
-  def __init__(self, base, f, sep, k, zero_pad=True):
+  def __init__(self, base, f, sep, num, zero_pad=True):
     self.base = base
     self.f = f
     self.sep = sep
-    self.k = k
+    self.num = num
     self.zero_pad = zero_pad
-    self.min_length = 2*k - 1
+    self.min_length = 2*num - 1
 
   def is_valid_length(self, l):
     return l%2 == 1 and l >= self.min_length
 
   def _rand_inputs(self, k):
     k = int(k)
-    n1 = random.randint(0, self.base**k-1)
-    n2 = random.randint(0, self.base**k-1)
-    return (n1, n2)
+    return [random.randint(0, self.base**k-1) for i in range(self.num)]
 
   def rand_pair(self, l):
-    k = int((l-1 - 2*PADDING)//2)
-    n1, n2 = self._rand_inputs(k)
-    result = self.f(n1, n2)
+    k = int((l+1)//self.num-1)
+    ns = self._rand_inputs(k)
+    result = functools.reduce(self.f, ns)
     inp = np.concatenate([[START] if PADDING else [],
        to_base(n1, self.base, k if self.zero_pad else 1) + 1,
        [self.sep],

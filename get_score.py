@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(description='Get scores')
 RESULT='score'
 
 
-parser.add_argument("--key", type=str, default=RESULT)
+parser.add_argument("--key", type=str, default="len,score,errors")
 parser.add_argument("--task", type=str, default='plot')
 parser.add_argument("--title", type=str, default='')
 parser.add_argument("--savedir", type=str, default='')

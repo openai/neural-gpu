@@ -30,6 +30,7 @@ smoothing:
 
 """
 USERNAME = os.environ['USER']
+DROPPED_KEYS = ('random_seed', 'max_steps', 'time_till_eval')
 
 def find_free_gpus(num_needed):
     all_gpu_status = cirrascale.client.get_gpu_status()
@@ -62,7 +63,7 @@ def grab_gpus(num_needed, t=5*60):
 
 
 def to_name(params):
-    return '-'.join(['%s=%s' % (k, params[k]) for k in params if k not in ('random_seed', 'max_steps')])
+    return '-'.join(['%s=%s' % (k, params[k]) for k in params if k not in DROPPED_KEYS])
 
 def create_screen_commands(session_label):
     return ['screen -S %s -d -m' % (session_label,)]
