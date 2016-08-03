@@ -330,7 +330,6 @@ generators.update(dict(scopy=CopyGenerator(10),
 
 
 class MultiOpGenerator(DataGenerator):
-
   def __init__(self, base, f, sep, num, zero_pad=True):
     self.base = base
     self.f = f
@@ -340,7 +339,7 @@ class MultiOpGenerator(DataGenerator):
     self.min_length = 2*num - 1
 
   def is_valid_length(self, l):
-    return l%2 == 1 and l >= self.min_length
+    return (l+1)%self.num == 0 and l >= self.min_length
 
   def _rand_inputs(self, k):
     k = int(k)
@@ -350,18 +349,21 @@ class MultiOpGenerator(DataGenerator):
     k = int((l+1)//self.num-1)
     ns = self._rand_inputs(k)
     result = functools.reduce(self.f, ns)
-    inp = np.concatenate([[START] if PADDING else [],
-       to_base(n1, self.base, k if self.zero_pad else 1) + 1,
-       [self.sep],
-                          to_base(n2, self.base, k if self.zero_pad else 1) + 1,
-                          #[22] if PADDING else []
-    ])
-    outp = np.concatenate([#[START] if PADDING else [],
-            to_base(result, self.base, 2*k+1 if self.zero_pad else 1) + 1,
-                           #[22] if PADDING else []
+    input_arrays = []
+    for i, n in enumerate(ns):
+      if i:
+        input_arrays.append([self.sep])
+      input_arrays.append(to_base(n, self.base, k if self.zero_pad else 1)+1)
+    inp = np.concatenate(input_arrays)
+    outp = np.concatenate([
+            to_base(result, self.base, l if self.zero_pad else 1) + 1,
     ])
     return inp, outp
 
+generators.update({'3badd':MultiOpGenerator(2, operator.add, 11, 3),
+                   '3qadd':MultiOpGenerator(4, operator.add, 12, 3),
+                   '3add':MultiOpGenerator(10, operator.add, 13, 3),
+                   })
 
 
 for k in generators:
@@ -388,22 +390,26 @@ def char_to_symbol(i):
   if i in [SPACE]: return '.'
   return str(i-1)
 
-def join_array(array):
+def join_array(array, rev=False):
   if len(array.shape) == 1:
+    if rev:
+      array = array[::-1]
     return ''.join(array).rstrip(' ')
   elif len(array.shape) == 2:
+    if rev:
+      array = array[:,::-1]
     return '\n'.join([''.join(a).rstrip(' ') for a in array])
   else:
     raise ValueError("Weird shape for joining: %s" % array.shape)
 
-def to_string(array):
+def to_string(array, rev=False):
   if isinstance(array, tuple):
     if len(array) == 3: # Batches
       inp, outp = array[:2]
-      return '\n\n'.join(to_string((i,o)) for i,o in zip(inp, outp))
-    inp, outp = map(to_string, array[:2])
+      return '\n\n'.join(to_string((i,o), rev) for i,o in zip(inp, outp))
+    inp, outp = [to_string(a, rev) for a in array[:2]]
     return '%s\n%s\n%s' % (inp, '-'*len(inp.split('\n')[0]), outp)
-  return join_array(char_to_symbol(array))
+  return join_array(char_to_symbol(array), rev=rev)
 
 @np.vectorize
 def to_id(s):
