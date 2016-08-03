@@ -23,13 +23,15 @@ RESULT='score'
 
 
 parser.add_argument("--key", type=str, default="len,score,errors")
-parser.add_argument("--task", type=str, default='plot')
+parser.add_argument("--job", type=str, default='plot')
+parser.add_argument("--task", type=str, default=None)
 parser.add_argument("--title", type=str, default='')
 parser.add_argument("--savedir", type=str, default='')
 parser.add_argument("--min-length", type=int, default=2)
 parser.add_argument("--dirs-in-name", type=int, default=2)
 parser.add_argument("--one-legend", type=bool, default=True)
-parser.add_argument("--skip-dir", type=bool, default=False)
+parser.add_argument("--skip-dir", action='store_true')
+parser.add_argument("--success", action='store_true')
 parser.add_argument("--recache", action='store_true')
 parser.add_argument("--median", action='store_true')
 parser.add_argument("--smoothing", type=int, default='1')
@@ -225,6 +227,7 @@ def get_prefix(fileset):
         i += 1
     return longest_cp[:len(longest_cp)+ 1-i]
 
+badkeys = set()
 def plot_all(func, scores, column=None, taskset=None):
     d = {}
     for s in scores:
@@ -232,10 +235,16 @@ def plot_all(func, scores, column=None, taskset=None):
 
     for key in sorted(d):
         for task in d[key][0].tasknames:
+            if (key, task) in badkeys:
+                continue
             if task not in taskset:
                 continue
             columns = [score.get_scores(column, task)
                        for score in d[key]]
+            if column == 'len' and args.success:
+                if not [c for c in columns if c is not None and c.values[-1] > 10]:
+                    badkeys.add((key, task))
+                    continue
             median_len = np.median([len(c) for c in columns if c is not None])
             data = pd.DataFrame([c for c in columns if c is not None and len(c) >= median_len / 2 and len(c) >= args.min_length]).T
             if not len(data):
@@ -300,10 +309,12 @@ if __name__ == '__main__':
     recache.do_recache = args.recache
     print("Started")
     all_tasks = sorted(set(x for file in args.files for x in get_tasks(get_key(file))))
+    if args.task:
+        all_tasks = args.task.split(',')
     keys = args.key.split(',')
     prefix = get_prefix(args.files)
     scores = [Scores(f, prefix=prefix) for f in args.files if is_valid_dir(f)]
-    if args.task == 'parse':
+    if args.job == 'parse':
         if args.savedir:
             construct_parsed_data(scores, keys, args.savedir)
         else:
@@ -311,7 +322,7 @@ if __name__ == '__main__':
             for key in keys:
                 ans[key] = get_print_results(scores, key)
             print(yaml.safe_dump(ans))
-    elif args.task == 'plot':
+    elif args.job == 'plot':
         global pylab
         import pylab
         title = args.title

@@ -356,7 +356,7 @@ class MultiOpGenerator(DataGenerator):
       input_arrays.append(to_base(n, self.base, k if self.zero_pad else 1)+1)
     inp = np.concatenate(input_arrays)
     outp = np.concatenate([
-            to_base(result, self.base, l if self.zero_pad else 1) + 1,
+            to_base(result, self.base, (k+1)*self.num-1 if self.zero_pad else 1) + 1,
     ])
     return inp, outp
 
@@ -402,7 +402,7 @@ def join_array(array, rev=False):
   else:
     raise ValueError("Weird shape for joining: %s" % array.shape)
 
-def to_string(array, rev=False):
+def to_string(array, rev=True):
   if isinstance(array, tuple):
     if len(array) == 3: # Batches
       inp, outp = array[:2]
