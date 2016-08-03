@@ -152,6 +152,7 @@ generators.update(dict(badd=OpGenerator(2, operator.add, 11),
                        bmul=OpGenerator(2, operator.mul, 14),
                        qmul=OpGenerator(4, operator.mul, 15),
                        omul=OpGenerator(8, operator.mul, 17),
+                       fmul=OpGenerator(5, operator.mul, 18),
                        mul=OpGenerator(10, operator.mul, 16),))
 
 generators.update(dict(baddz=OpGenerator(2, operator.add, 11, False),
