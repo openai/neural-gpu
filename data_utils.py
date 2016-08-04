@@ -164,7 +164,7 @@ generators.update(dict(baddz=OpGenerator(2, operator.add, 11, False),
 
 class ToughAddGenerator(OpGenerator):
   def __init__(self, base, sep, zero_pad=True):
-    super(ToughAddGenerator, self).__init__(base, operator.add, sep)
+    super(ToughAddGenerator, self).__init__(base, operator.add, sep, zero_pad)
 
   def _rand_inputs(self, k):
     r = random.random()
@@ -336,18 +336,21 @@ class MultiOpGenerator(DataGenerator):
     self.sep = sep
     self.num = num
     self.zero_pad = zero_pad
-    self.min_length = 2*num - 1
+    self.min_length = 1 if num is None else 2*num - 1
 
   def is_valid_length(self, l):
-    return (l+1)%self.num == 0 and l >= self.min_length
+    return l >= self.min_length
 
-  def _rand_inputs(self, k):
+  def _rand_inputs(self, k, num):
     k = int(k)
-    return [random.randint(0, self.base**k-1) for i in range(self.num)]
+    return [random.randint(0, self.base**k-1) for i in range(num)]
 
   def rand_pair(self, l):
-    k = int((l+1)//self.num-1)
-    ns = self._rand_inputs(k)
+    num = self.num
+    if num is None:
+      num = random.randint(1, (l+1)//2)
+    k = int((l+1)//num-1)
+    ns = self._rand_inputs(k, num)
     result = functools.reduce(self.f, ns)
     input_arrays = []
     for i, n in enumerate(ns):
@@ -356,7 +359,7 @@ class MultiOpGenerator(DataGenerator):
       input_arrays.append(to_base(n, self.base, k if self.zero_pad else 1)+1)
     inp = np.concatenate(input_arrays)
     outp = np.concatenate([
-            to_base(result, self.base, (k+1)*self.num-1 if self.zero_pad else 1) + 1,
+            to_base(result, self.base, (k+1)*num-1 if self.zero_pad else 1) + 1,
     ])
     return inp, outp
 
@@ -364,6 +367,11 @@ generators.update({'3badd':MultiOpGenerator(2, operator.add, 11, 3),
                    '3qadd':MultiOpGenerator(4, operator.add, 12, 3),
                    '3add':MultiOpGenerator(10, operator.add, 13, 3),
                    '3bmul':MultiOpGenerator(2, operator.mul, 14, 3),
+                   })
+generators.update({'kbadd':MultiOpGenerator(2, operator.add, 11, None),
+                   'kqadd':MultiOpGenerator(4, operator.add, 12, None),
+                   'kadd':MultiOpGenerator(10, operator.add, 13, None),
+                   'kbmul':MultiOpGenerator(2, operator.mul, 14, None),
                    })
 
 
