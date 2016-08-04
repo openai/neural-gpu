@@ -330,27 +330,29 @@ generators.update(dict(scopy=CopyGenerator(10),
 
 
 class MultiOpGenerator(DataGenerator):
-  def __init__(self, base, f, sep, num, zero_pad=True):
+  def __init__(self, base, f, sep, num, zero_chance=1, zero_pad=True):
     self.base = base
     self.f = f
     self.sep = sep
     self.num = num
     self.zero_pad = zero_pad
     self.min_length = 1 if num is None else 2*num - 1
+    self.zero_chance = zero_chance
 
   def is_valid_length(self, l):
     return l >= self.min_length
 
-  def _rand_inputs(self, k, num):
+  def _rand_inputs(self, k, num, allow_zero):
     k = int(k)
-    return [random.randint(0, self.base**k-1) for i in range(num)]
+    return [random.randint(0 if allow_zero else 1, self.base**k-1) for i in range(num)]
 
   def rand_pair(self, l):
     num = self.num
     if num is None:
       num = random.randint(1, (l+1)//2)
     k = int((l+1)//num-1)
-    ns = self._rand_inputs(k, num)
+    allow_zero = random.random() < self.zero_chance
+    ns = self._rand_inputs(k, num, allow_zero)
     result = functools.reduce(self.f, ns)
     input_arrays = []
     for i, n in enumerate(ns):
@@ -371,7 +373,7 @@ generators.update({'3badd':MultiOpGenerator(2, operator.add, 11, 3),
 generators.update({'kbadd':MultiOpGenerator(2, operator.add, 11, None),
                    'kqadd':MultiOpGenerator(4, operator.add, 12, None),
                    'kadd':MultiOpGenerator(10, operator.add, 13, None),
-                   'kbmul':MultiOpGenerator(2, operator.mul, 14, None),
+                   'kbmul':MultiOpGenerator(2, operator.mul, 14, None, .3),
                    })
 
 
