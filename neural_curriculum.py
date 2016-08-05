@@ -150,7 +150,7 @@ class BetterCurriculum(Curriculum):
       return np.random.choice(self.generators)
     if np.random.random() > self.rand_prob:
       return unsolved[0]
-    if only_later:
+    if self.only_later:
       return np.random.choice(unsolved)
     else:
       return np.random.choice(self.generators)
