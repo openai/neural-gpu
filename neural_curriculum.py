@@ -130,15 +130,30 @@ class GeneralizeCurriculum(Curriculum):
 
 class BetterCurriculum(Curriculum):
   rand_prob = 0.2
+  only_later = False
   decrease_threshold = 1
+
+  def __init__(self, generators, model_config, kind):
+    super(BetterCurriculum, self).__init__(generators, model_config)
+    if kind == 2:
+      self.decrease_threshold = 0.01
+    elif kind == 3:
+      self.rand_prob = 0
+    elif kind == 4:
+      self.only_later = True
 
   def draw_generator(self, task=None):
     if task is not None:
       return [g for g in self.generators if g.name == task][0]
     unsolved = [g for g in self.generators if self.max_cur_lengths[g.taskid] < self.max_length]
-    if unsolved and np.random.random() > self.rand_prob:
+    if not unsolved:
+      return np.random.choice(self.generators)
+    if np.random.random() > self.rand_prob:
       return unsolved[0]
-    return np.random.choice(self.generators)
+    if only_later:
+      return np.random.choice(unsolved)
+    else:
+      return np.random.choice(self.generators)
 
   def consider_extending_for_task(self, record, taskid):
     if (self.max_cur_lengths[taskid] == self.max_length and

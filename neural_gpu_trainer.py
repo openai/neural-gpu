@@ -246,16 +246,14 @@ def initialize(sess, checkpoint_dir=None):
     try:
       model.curriculum = yaml.load(open(os.path.join(checkpoint_dir, 'neural_gpu_curriculum.ckpt')))
     except: #XXX hack
-      curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config)
-      if FLAGS.progressive_curriculum == 2:
-        curriculum.decrease_threshold = 0.01
+      curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config,
+                                                      FLAGS.progressive_curriculum)
       model.curriculum = curriculum
   else:
       #curriculum = neural_curriculum.MixedCurriculum(data_generators, model.config)
     if FLAGS.progressive_curriculum:
-      curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config)
-      if FLAGS.progressive_curriculum == 2:
-        curriculum.decrease_threshold = 0.01
+      curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config,
+                                                      FLAGS.progressive_curriculum)
     else:
       curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
     model.curriculum = curriculum

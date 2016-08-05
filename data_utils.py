@@ -183,7 +183,8 @@ class ToughAddGenerator(OpGenerator):
       return vals[::-1]
 
 generators.update(dict(baddt=ToughAddGenerator(2, 11),
-                       qaddt=ToughAddGenerator(4, 11),))
+                       qaddt=ToughAddGenerator(4, 12),
+                       addt=ToughAddGenerator(10, 13),))
 
 
 
