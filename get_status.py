@@ -100,6 +100,8 @@ class Results(object):
     @property
     def last_update(self):
         vals = [res for res in self.results if isinstance(res, dict)]
+        if not vals:
+            return 'None'
         last_t = max([v['last_update'] for v in vals])
         return str(datetime.timedelta(seconds=time.time() - last_t))
 
