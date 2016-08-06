@@ -377,6 +377,48 @@ generators.update({'kbadd':MultiOpGenerator(2, operator.add, 11, None),
                    'kbmul':MultiOpGenerator(2, operator.mul, 14, None, .3),
                    })
 
+class ExpressionGenerator(DataGenerator):
+  min_length = 1
+
+  def __init__(self, base, plus_sep, times_sep, op_chance):
+    self.base = base
+    self.to_num = {'+': plus_sep,
+                   '*': times_sep}
+    self.nums = range(base)
+    self.op_chance = op_chance
+    for i in self.nums:
+      self.to_num[i] = i+1
+
+  def rand_pair(self, l):
+    ans = []
+    inp = []
+    last_num = []
+    valid_op = False
+    for i in range(l):
+      if valid_op and random.random() < self.op_chance:
+        choice = random.choice('+*')
+      else:
+        choice = random.choice(self.nums)
+      inp.append(self.to_num[choice])
+      if choice in ['+', '*']:
+        ans.append(from_base(last_num, self.base))
+        last_num = []
+        ans.append(choice)
+        valid_op = False
+      else:
+        last_num.append(choice)
+        if i == l-2:
+          valid_op = False
+        else:
+          valid_op = True
+    ans.append(from_base(last_num, self.base))
+    result = eval(''.join(map(str, ans[::-1])))
+    outp = to_base(result, self.base)+1
+    return inp, outp
+
+generators.update({'bexpr':ExpressionGenerator(2, 11, 14, .3),
+                   'qexpr':ExpressionGenerator(4, 12, 15, .3),
+                   'expr':ExpressionGenerator(10, 13, 16, .3),})
 
 for k in generators:
   generators[k].name = k

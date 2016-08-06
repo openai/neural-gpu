@@ -218,6 +218,7 @@ def get_tasks(key):
 def get_key(fname):
     fname = fname.split('-seed')[0]
     fname = fname.replace('max_steps=200000-', '')
+    fname = fname.replace('forward_max=201-', '')
     return '/'.join(fname.split('/')[-args.dirs_in_name:])
 
 def get_prefix(fileset):
