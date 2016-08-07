@@ -1,1 +1,1 @@
-rsync -avP 6.cirrascale.sci.openai.org:models/logs/August* cachedlogs/ --exclude '*.ckpt*'
+rsync -avP 3.cirrascale.sci.openai.org:models/logs/August* cachedlogs/ --exclude '*.ckpt*'

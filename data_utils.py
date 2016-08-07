@@ -413,7 +413,7 @@ class ExpressionGenerator(DataGenerator):
           valid_op = True
     ans.append(from_base(last_num, self.base))
     result = eval(''.join(map(str, ans[::-1])))
-    outp = to_base(result, self.base)+1
+    outp = to_base(result, self.base, l)+1
     return inp, outp
 
 generators.update({'bexpr':ExpressionGenerator(2, 11, 14, .3),
