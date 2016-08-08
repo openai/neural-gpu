@@ -73,7 +73,10 @@ def get_results_dict(fname):
             taskname = words[2]
             if taskname not in answer:
                 answer[taskname] = pd.Series(name=RESULT)
-            answer[taskname].loc[int(loc)] = float(val)
+            try:
+                answer[taskname].loc[int(loc)] = float(val)
+            except ValueError:
+                pass
     return answer
 
 def get_scores_dict(fname):
