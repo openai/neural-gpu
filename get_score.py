@@ -15,7 +15,11 @@ import joblib
 import functools
 
 import collections
+import pylab
 
+pylab.rcParams['axes.prop_cycle'] = ("cycler('color', ['b','g','r','c','m','y','k'] + "
+                                     "['orange', 'darkgreen', 'indigo', 'gold', 'fuchsia'])")
+#pylab.rcParams['axes.prop_cycle'] = ("cycler('color', 'bgrcmyk'*2)")
 
 parser = argparse.ArgumentParser(description='Get scores')
 
@@ -242,6 +246,11 @@ def plot_all(func, scores, column=None, taskset=None):
                 continue
             columns = [score.get_scores(column, task)
                        for score in d[key]]
+            def strip_last(c):
+                if c is None or c.index[-1] != 200200:
+                    return c
+                return c[c.index[:-1]]
+            columns = map(strip_last, columns)
             if column == 'len' and args.success:
                 if not [c for c in columns if c is not None and c.values[-1] > 10]:
                     badkeys.add((key, task))
@@ -324,8 +333,6 @@ if __name__ == '__main__':
                 ans[key] = get_print_results(scores, key)
             print(yaml.safe_dump(ans))
     elif args.job == 'plot':
-        global pylab
-        import pylab
         title = args.title
         if not title:
             title = os.path.split(args.files[0])[-2]
