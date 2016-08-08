@@ -132,6 +132,7 @@ class BetterCurriculum(Curriculum):
   rand_prob = 0.2
   only_later = False
   decrease_threshold = 1
+  last_if_solved = False
 
   def __init__(self, generators, model_config, kind):
     super(BetterCurriculum, self).__init__(generators, model_config)
@@ -141,13 +142,19 @@ class BetterCurriculum(Curriculum):
       self.rand_prob = 0
     elif kind == 4:
       self.only_later = True
+    elif kind == 5:
+      self.only_later = True
+      self.last_if_solved = True
 
   def draw_generator(self, task=None):
     if task is not None:
       return [g for g in self.generators if g.name == task][0]
     unsolved = [g for g in self.generators if self.max_cur_lengths[g.taskid] < self.max_length]
     if not unsolved:
-      return np.random.choice(self.generators)
+      if self.last_if_solved:
+        return self.generators[-1]
+      else:
+        return np.random.choice(self.generators)
     if np.random.random() > self.rand_prob:
       return unsolved[0]
     if self.only_later:
