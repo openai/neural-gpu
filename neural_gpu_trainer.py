@@ -80,6 +80,7 @@ def define_flags():
   tf.app.flags.DEFINE_string("task", "badd", "Which task are we learning?")
   tf.app.flags.DEFINE_string("train_dir", "/tmp/neural", "Directory to store models.")
 
+  tf.app.flags.DEFINE_float("layer_scale", 1.0, "Number of layers to use")
   tf.app.flags.DEFINE_string("model_class", "neural_gpu.NeuralGPU", "Model class")
 
   #tf.app.flags.DEFINE_bool("do_attention", False, "Whether to use attention method.")

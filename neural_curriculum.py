@@ -8,7 +8,7 @@ class NeuralConfig(object):
   cutoff nconvs kw kh height mode lr pull pull_incr
   min_length batch_size grad_noise_scale task
   train_data_size init_weight curriculum_bound
-  model_class input_height
+  model_class input_height layer_scale
   '''.split()
 
   def __init__(self, FLAGS, **kws):
