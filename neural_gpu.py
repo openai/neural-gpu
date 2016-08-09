@@ -272,11 +272,12 @@ class NeuralGPUAtSize(object):
     self.extras = extras
     self.output_layers = output_layers
     it = tf.Variable(0, name='layer_index')
+    use_swap = self.config.nmaps > 256
     cur, it = tf.while_loop(lambda cur, it: it < self.length,
                             self.looping_layer,
                             [cur, it],
                             parallel_iterations=1,
-                            swap_memory=True)
+                            swap_memory=use_swap)
     #while it < self.length:
     #  cur, it = self.looping_layer(cur, it)
     return cur
