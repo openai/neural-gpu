@@ -93,7 +93,7 @@ def run_with_options_commands(gpu, screen_label, params, session_label=None, ses
 
 def oneserver_commands(param_sets, session_label, gpus, session_label2=None):
     commands = []
-    commands.extend(create_screen_commands(session_label))
+    commands.extend(create_screen_commands(session_label2))
     for gpu, params in zip(gpus, param_sets):
         name = to_name(params)
         commands.extend(run_with_options_commands(gpu.index, name, params, session_label, session_label2))
