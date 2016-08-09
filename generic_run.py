@@ -76,13 +76,14 @@ def create_screen_commands(session_label):
 def get_train_dir(screen_label, session_label):
     return '../logs/%s/%s' % (session_label, screen_label)
 
-def run_with_options_commands(gpu, screen_label, params, session_label=None):
+def run_with_options_commands(gpu, screen_label, params, session_label=None, session_label_screen=None):
+    session_label_screen = session_label_screen or session_label
     internal_command = 'CUDA_VISIBLE_DEVICES=%s %s' % (gpu, args.program)
     log_dir = get_train_dir(screen_label, session_label)
     internal_command += ' ' + '--train_dir=%s' % log_dir
     internal_command += ' ' + ' '.join('--%s=%s' % vs for vs in params.items())
     screen_command = 'screen'
-    screen_command += (' -S %s' % session_label if session_label else '')
+    screen_command += (' -S %s' % (session_label_screen or ''))
     create_command = '%s -X screen -t "%s"' % (screen_command, screen_label)
     command = '%s -X -p "%s" stuff "%s\n"' % (screen_command, screen_label, internal_command)
     result = [create_command,
@@ -90,21 +91,22 @@ def run_with_options_commands(gpu, screen_label, params, session_label=None):
               command]
     return result
 
-def oneserver_commands(param_sets, session_label, gpus):
+def oneserver_commands(param_sets, session_label, gpus, session_label2=None):
     commands = []
     commands.extend(create_screen_commands(session_label))
     for gpu, params in zip(gpus, param_sets):
         name = to_name(params)
-        commands.extend(run_with_options_commands(gpu.index, name, params, session_label))
+        commands.extend(run_with_options_commands(gpu.index, name, params, session_label, session_label2))
     return commands
 
 def kill(session_label, server_file):
-    server_location = 'servers/%s' % (server_file or session_label)
+    server_file = server_file or session_label
+    server_location = 'servers/%s' % server_file
     with open(server_location) as f:
         metadata = yaml.load(f)
         gpudict = metadata['locations']
     for s in gpudict:
-        run_remotely(s, ['sh kill_screen.sh %s' % session_label])
+        run_remotely(s, ['sh kill_screen.sh %s' % server_file])
     all_gpus = cirrascale.client.get_gpu_status()
     to_unreserve = []
     for g in sum(all_gpus.values(), []):
@@ -140,7 +142,7 @@ def run_opportunistically(param_sets, session_label, server_file=None):
     done = 0
     for h, gpus in sorted(gpudict.items()):
         commands = oneserver_commands(param_sets[done:done+len(gpus)],
-                                      session_label, gpus)
+                                      session_label, gpus, server_file)
         done += len(gpus)
         run_remotely(h, commands)
     print('Done')
