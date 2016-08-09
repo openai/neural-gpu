@@ -98,8 +98,8 @@ def oneserver_commands(param_sets, session_label, gpus):
         commands.extend(run_with_options_commands(gpu.index, name, params, session_label))
     return commands
 
-def kill(session_label):
-    server_location = 'servers/%s' % session_label
+def kill(session_label, server_file):
+    server_location = 'servers/%s' % (server_file or session_label)
     with open(server_location) as f:
         metadata = yaml.load(f)
         gpudict = metadata['locations']
@@ -117,8 +117,9 @@ def kill(session_label):
         f.write(yaml.safe_dump(metadata))
     print('Success! Writing state out to file.')
 
-def run_opportunistically(param_sets, session_label):
-    server_location = 'servers/%s' % session_label
+def run_opportunistically(param_sets, session_label, server_file=None):
+    server_file = server_file or session_label
+    server_location = 'servers/%s' % server_file
     if os.path.isfile(server_location):
         raise ValueError('Server location file already exists!')
     gpudict = grab_gpus(len(param_sets))
@@ -189,12 +190,11 @@ def main(param_sets):
             return
     if not args.local:
         if args.kill:
-            kill(args.label)
+            kill(args.label, args.session)
             print("Repeating, for good measure")
-            kill(args.label)
+            kill(args.label, args.session)
             return
-        session_name = args.session or args.label
-        run_opportunistically(param_sets, session_name)
+        run_opportunistically(param_sets, args.label, args.session)
     else:
         to_run = param_sets[args.paramoff:][:8]
         commands = oneserver_commands(to_run, args.label, range(args.gpuoff, 8))
