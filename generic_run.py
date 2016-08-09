@@ -12,6 +12,7 @@ from requests import HTTPError
 
 parser = argparse.ArgumentParser(description='Run commands')
 parser.add_argument('--label', type=str, default='Experiment')
+parser.add_argument('--session', type=str, default='')
 parser.add_argument('--dry', action='store_true', default=False)
 parser.add_argument('--local', action='store_true', default=False)
 parser.add_argument('--kill', action='store_true', default=False)
@@ -192,7 +193,8 @@ def main(param_sets):
             print("Repeating, for good measure")
             kill(args.label)
             return
-        run_opportunistically(param_sets, args.label)
+        session_name = args.session or args.label
+        run_opportunistically(param_sets, session_name)
     else:
         to_run = param_sets[args.paramoff:][:8]
         commands = oneserver_commands(to_run, args.label, range(args.gpuoff, 8))
