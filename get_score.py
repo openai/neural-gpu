@@ -13,6 +13,7 @@ import yaml
 import shutil
 import joblib
 import functools
+import re
 
 import collections
 import pylab
@@ -29,6 +30,7 @@ RESULT='score'
 parser.add_argument("--key", type=str, default="len,score,errors")
 parser.add_argument("--job", type=str, default='plot')
 parser.add_argument("--task", type=str, default=None)
+parser.add_argument("--exclude_opts", type=str, default=None)
 parser.add_argument("--title", type=str, default='')
 parser.add_argument("--savedir", type=str, default='')
 parser.add_argument("--min-length", type=int, default=2)
@@ -114,6 +116,13 @@ def get_dfs(dirname, tasknames):
             pass
     return dfs
 
+def matches(fname, exclude_opts):
+    if exclude_opts:
+        for opt in exclude_opts.split('|'):
+            if opt in fname:
+                return True
+    return False
+
 class Scores(object):
     def __init__(self, dirname, tasknames=None, prefix=''):
         self.dirname = dirname
@@ -177,6 +186,7 @@ class Scores(object):
         return lens.index[-1].item() if lens is not None else None
 
 def get_name(fname):
+    fname = remove_defaults(fname)
     return '/'.join(fname.split('/')[:2])
 
 def plot_start(key):
@@ -222,11 +232,31 @@ def get_tasks(key):
         tasks = locs[index].split('-')[0].split(',')
         return tasks
 
+def remove_defaults(fname):
+    for default in ['max_steps=200000',
+                    'forward_max=201',
+#                    'forward_max=401',
+                    'max_length=41',
+                    'do_resnet=False',
+                    'do_binarization=0.0',
+                    'do_batchnorm=0',
+                    'do_shifter=0',
+                    'cutoff_tanh=0.0',
+                    'input_height=2',
+                    ]:
+        fname = fname.replace(default+'-', '')
+        if fname.endswith(default):
+            fname = fname[:-len(default)-1]
+    fname = fname.replace('badde,baddet', 'badde')
+    fname = fname.replace('baddet,badde', 'baddet')
+    fname = re.sub('(task=[^-]*)-(nmaps=[0-9]*)', r'\2-\1', fname)
+    return fname
+
 def get_key(fname):
     fname = fname.split('-seed')[0]
-    fname = fname.replace('max_steps=200000-', '')
-    fname = fname.replace('forward_max=201-', '')
-    return '/'.join(fname.split('/')[-args.dirs_in_name:])
+    fname = '/'.join(fname.split('/')[-args.dirs_in_name:])
+    fname = remove_defaults(fname)
+    return fname
 
 def get_prefix(fileset):
     longest_cp = os.path.commonprefix(fileset)
@@ -242,6 +272,8 @@ def plot_all(func, scores, column=None, taskset=None):
         d.setdefault(s.key, []).append(s)
 
     for key in sorted(d):
+        if matches(key, args.exclude_opts):
+            continue
         for task in d[key][0].tasknames:
             if (key, task) in badkeys:
                 continue
