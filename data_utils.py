@@ -39,12 +39,10 @@ PADDING = False
 
 DIGITS = range(1, 11)
 NULL = 0
-PLUS = 11
-MINUS = 12
-TIMES = 13
-DUP = 14
-SPACE = 20
-START = 21
+DUP = 22
+SPACE = 23
+START = 24
+MINUS = 25
 
 def pad(l):
   for b in bins + [forward_max]:
@@ -52,6 +50,9 @@ def pad(l):
   raise IndexError("Length %s longer than max length %s" % (l, forward_max))
 
 def to_base(num, b, l=1):
+  if num < 0:
+    val = to_base(-num, b, (l - 1) or 1)
+    return np.concatenate([val, [MINUS-1]])
   assert num >= 0
   ans = []
   while num:
@@ -382,14 +383,14 @@ generators.update({'kbadd':MultiOpGenerator(2, operator.add, 11, None),
 class ExpressionGenerator(DataGenerator):
   min_length = 1
 
-  def __init__(self, base, plus_sep, times_sep, op_chance):
+  def __init__(self, base, operators, op_chance):
     self.base = base
-    self.to_num = {'+': plus_sep,
-                   '*': times_sep}
+    self.operators = dict(operators)
     self.nums = range(base)
     self.op_chance = op_chance
-    for i in self.nums:
-      self.to_num[i] = i+1
+
+    self.to_num = {i: i+1 for i in self.nums}
+    self.to_num.update(self.operators)
 
   def rand_pair(self, l):
     ans = []
@@ -398,11 +399,11 @@ class ExpressionGenerator(DataGenerator):
     valid_op = False
     for i in range(l):
       if valid_op and random.random() < self.op_chance:
-        choice = random.choice('+*')
+        choice = random.choice(self.operators.keys())
       else:
         choice = random.choice(self.nums)
       inp.append(self.to_num[choice])
-      if choice in ['+', '*']:
+      if choice in self.operators:
         ans.append(from_base(last_num, self.base))
         last_num = []
         ans.append(choice)
@@ -414,13 +415,36 @@ class ExpressionGenerator(DataGenerator):
         else:
           valid_op = True
     ans.append(from_base(last_num, self.base))
-    result = eval(''.join(map(str, ans[::-1])))
+    string_expr = ''.join(map(str, ans[::-1]))
+    string_expr = string_expr.replace('/', '//')
+    try:
+      result = eval(string_expr)
+    except ZeroDivisionError:
+      return self.rand_pair(l)
+    if result < 0:
+      return self.rand_pair(l)
     outp = to_base(result, self.base, l)+1
     return inp, outp
 
-generators.update({'bexpr':ExpressionGenerator(2, 11, 14, .3),
-                   'qexpr':ExpressionGenerator(4, 12, 15, .3),
-                   'expr':ExpressionGenerator(10, 13, 16, .3),})
+generators.update({'bexpr':ExpressionGenerator(2, zip('+*', [11, 14]), .3),
+                   'qexpr':ExpressionGenerator(4, zip('+*', [12, 15]), .3),
+                   'expr':ExpressionGenerator(10, zip('+*', [13, 16]), .3),})
+
+generators.update({'bexpra':ExpressionGenerator(2, zip('+*/-', [11, 14,17,20]), .3),
+                   'qexpra':ExpressionGenerator(4, zip('+*/-', [12, 15,18,21]), .3),
+                   'expra':ExpressionGenerator(10, zip('+*/-', [13, 16,19,22]), .3),})
+
+generators.update({'bexprp':ExpressionGenerator(2, zip('+', [11]), .3),
+                   'qexprp':ExpressionGenerator(4, zip('+', [12]), .3),
+                   'exprp':ExpressionGenerator(10, zip('+', [13]), .3),})
+
+generators.update({'bexprs':ExpressionGenerator(2, zip('+-', [11, 20]), .3),
+                   'qexprs':ExpressionGenerator(4, zip('+-', [12, 21]), .3),
+                   'exprs':ExpressionGenerator(10, zip('+-', [13, 22]), .3),})
+
+generators.update({'bexprsm':ExpressionGenerator(2, zip('+*-', [11, 14,20]), .3),
+                   'qexprsm':ExpressionGenerator(4, zip('+*-', [12, 15,21]), .3),
+                   'exprsm':ExpressionGenerator(10, zip('+*-', [13, 16,22]), .3),})
 
 for k in generators:
   generators[k].name = k
@@ -442,8 +466,11 @@ def char_to_symbol(i):
   if i == 0: return "_"
   if i in [11,12,13]: return "+"
   if i in [14,15,16]: return "*"
+  if i in [17,18,19]: return "/"
+  if i in [20,21,22]: return "-"
   if i in [START]: return '^'
   if i in [SPACE]: return '.'
+  if i in [MINUS]: return '-'
   return str(i-1)
 
 def join_array(array, rev=False):

@@ -65,6 +65,7 @@ class VariableInitializer(object):
     self.variable_usages[var].append((x,y))
 
   def get_feed(self):
+    return {}
     ans = {}
     for k, lst in self.variable_usages.items():
       norms = [[tf.sqrt(tf.reduce_sum(v ** 2)) for v in pair] for pair in lst]
@@ -73,6 +74,7 @@ class VariableInitializer(object):
     return ans
 
   def use_feed(self, sess, result):
+    return
     ops = []
     for k in self.variable_usages:
       ratio = np.median(result[k])
@@ -227,103 +229,57 @@ class NeuralGPUAtSize(object):
     bmask = tf.reduce_any(self.input > 0, 2) | (self.target > 0)
     # mask: batch x length x 1 x 1
     mask = tf.to_float(mytf.expand_dims_by_k(bmask, 2))
+    return mask
 
-    # padded_mask: batch x (length+1) x 1 x 1
-    padded_mask = tf.concat(1, [mask, tf.zeros_like(mask[:,:1,:,:])])
-    # scales: initially batch x length x 1 x 1
-    scales = padded_mask[:,:self.length,:,:] * (1 - padded_mask[:,1:,:,:])
-    # Now length x batch x 1 x 1
-    scales = tf.transpose(scales, [1,0,2,3])
-    return mask, scales
-
-  def construct_all_layers(self, first, mask):
-    # first: batch_size x length x height x nmaps
+  def looping_layer(self, cur, index):
     cutoff = self.config.cutoff
     kw = self.config.kw
     kh = self.config.kh
     nmaps = self.config.nmaps
     nconvs = self.config.nconvs
+    keep_prob = 1.0 - tf.to_float(self.do_training) * (self.config.dropout * 8.0 / self.length)
+    for it in xrange(self.config.rx_step):
+      with tf.variable_scope("RX%d" % it) as vs:
+        #if index:
+        #  vs.reuse_variables()
+        old = cur
+        cur = tf.nn.dropout(cur, keep_prob)
+        cur = gru_block(cur, kw, kh, nmaps, cutoff, self.mask, 'lookup',
+                        self.initializer, nconvs, extras=self.extras)
+        cur = tf.select(tf.greater_equal(self.output_layers, index + it), cur, old)
 
-    avg_length = tf.reduce_mean(tf.reduce_sum(mask, [1,2,3])) # shape: batch_size
+        #layers.append(cur)
+    return (cur, index + self.config.rx_step)
+
+  def construct_all_layers(self, first, mask):
+    # first: batch_size x length x height x nmaps
+
+    output_layers = tf.to_int32(tf.reduce_sum(mask, [1,2,3]))
+    #avg_length = tf.reduce_mean(tf.reduce_sum(mask, [1,2,3])) # shape: batch_size
     #desired_norms = mytf.expand_dims_by_k(tf.sqrt(real_lengths), 3) / 6
 
-    keep_prob = 1.0 - tf.to_float(self.do_training) * (self.config.dropout * 8.0 / self.length)
     cur = first
     layers = []
-    attention_probs_list = []
-    self.indices = {}
-    for it in xrange(self.length):
-      with tf.variable_scope("RX%d" % (it % self.config.rx_step)) as vs:
-        if it >= self.config.rx_step:
-          vs.reuse_variables()
-        cur = tf.nn.dropout(cur, keep_prob)
-        extras = []
-        if FLAGS.do_globalsum:
-          # bs x 1 x 1 x nmaps
-          basic_global_info = tf.reduce_sum(cur, [1, 2], True)
-          basic_global_info = tf.nn.l2_normalize(basic_global_info, 3) * nmaps**.5
-          global_info = conv_linear(basic_global_info, 1, 1, FLAGS.do_globalsum,
-                                    "globalsum", self.initializer)
-          extras.append(mytf.broadcast_as(global_info, cur, [1,2]))
-        if FLAGS.taskid:
-          # bs x 1 x 1 x ntasks
-          task = tf.one_hot(tf.to_int32(mytf.expand_dims_by_k(self.task, 2)),
-                            self.ntasks)
-          extras.append(mytf.broadcast_as(task, cur, [1,2]))
 
-        if (FLAGS.do_shifter == 1 or
-            (FLAGS.do_shifter == 2 and it == 0) or
-            (FLAGS.do_shifter == 3 and it % self.config.rx_step == 0) or
-            (FLAGS.do_shifter == 4 and it == 0) or
-            (FLAGS.do_shifter == 5 and it == 1) or
-            (FLAGS.do_shifter == 6) or
-            (FLAGS.do_shifter == 7 and it % self.config.rx_step == 1) or
-            (FLAGS.do_shifter == 8 and it == 1) or
-            (FLAGS.do_shifter > 8)
-            ):
-          # shape: bs x length x height x height
-          if FLAGS.do_shifter == 4:
-            # shape: bs x length x height
-            first = tf.to_float(tf.equal(self.input, 21)) * 1e5
-            second = tf.to_float(tf.equal(self.input, 11)) * 1e5
-            rest = first * 0.
-            indices = mytf.stack([first, second] + [rest]*(self.config.height - 2), 3)
-          elif FLAGS.do_shifter == 5:
-            # shape: bs x length
-            first = tf.to_float(tf.equal(self.input[:,:,0], 21)) * 1e5
-            second = tf.to_float(tf.equal(self.input[:,:,0], 11)) * 1e5
-            rest = first
-            # shape: bs x length x height
-            indices = mytf.stack([first, second] + [rest]*(self.config.height - 2), 2)
-          elif FLAGS.do_shifter > 5:
-            indices = mytf.safe_squeeze(conv_linear(extras+[cur], 1, 1, 1,
-                                                    "indices", self.initializer), -1)
-          else:
-            # indices shape: bs x length x height(in) x height(out)
-            indices = conv_linear(extras+[cur], 1, 1, self.config.height,
-                                  "indices", self.initializer)
-          self.indices[it] = indices
-          if FLAGS.do_shifter < 5:
-            cur = indexer_block2(cur, indices)
-          else:
-            cur = indexer_block1(cur, indices)
+    extras = []
+    if FLAGS.taskid:
+      # bs x 1 x 1 x ntasks
+      task = tf.one_hot(tf.to_int32(mytf.expand_dims_by_k(self.task, 2)),
+                        self.ntasks)
+      extras.append(mytf.broadcast_as(task, cur, [1,2]))
 
-        cur = gru_block(cur, kw, kh, nmaps, cutoff, mask, 'lookup',
-                        self.initializer, nconvs, extras=extras)
-
-
-        if FLAGS.do_batchnorm:
-          if FLAGS.do_batchnorm == 1:
-            cur = mytf.batch_norm(cur, self.do_training, scope='bn')
-          elif FLAGS.do_batchnorm == 2:
-            cur = mytf.batch_norm(cur, self.do_training, mask, scope='bn')
-          cur = cur * mask
-
-
-        layers.append(cur)
-
-    self.attention_probs = tf.pack(attention_probs_list) # shape: layers x 3 x bs
-    self.layers = tf.pack([l[:,:,:1,:] for l in layers])
+    self.mask = mask
+    self.extras = extras
+    self.output_layers = output_layers
+    it = tf.Variable(0, name='layer_index')
+    cur, it = tf.while_loop(lambda cur, it: it < self.length,
+                            self.looping_layer,
+                            [cur, it],
+                            parallel_iterations=1,
+                            swap_memory=True)
+    #while it < self.length:
+    #  cur, it = self.looping_layer(cur, it)
+    return cur
 
   def _get_first_layer(self, mask):
     """Turn the input into a batch_size x length x height x nmaps tensor"""
@@ -352,41 +308,19 @@ class NeuralGPUAtSize(object):
     nmaps = self.config.nmaps
     noclass = self.config.noclass
 
-    mask, scales = self.construct_mask()
+    mask = self.construct_mask()
 
     # The general tensor shape is
     # batchsize x length x height x nmaps
     first = self._get_first_layer(mask)
 
     # Computation steps.
-    self.construct_all_layers(first, mask)
+    last_layer = self.construct_all_layers(first, mask)
 
     # Final convolution to get logits, list outputs.
-    layer_output = conv_linear(self.layers, 1, 1, noclass, "output", self.initializer)
-    outputs = mytf.safe_squeeze(layer_output, -2) # depth x batch x length x noclass
+    layer_output = conv_linear(last_layer[:,:,:1,:], 1, 1, noclass, "output", self.initializer)
+    output = mytf.safe_squeeze(layer_output, -2) # batch x length x noclass
 
-    if FLAGS.output_layer == 0:
-      output = tf.reduce_sum(outputs * scales, 0)
-    elif FLAGS.output_layer == 1:
-      output = outputs[-1,:,:,:]
-    elif FLAGS.output_layer == 2:
-      weighting = tf.get_variable("Probs", [self.config.height, self.config.nmaps])
-      # Do this in two stages to have smaller variables
-      moo = tf.reduce_mean(self.layers, 2)
-      # depth x bs
-      probs = tf.reduce_mean(moo * weighting, [2,3])
-      self.probs = tf.transpose(mytf.softmax(tf.transpose(probs)))
-      
-      output = tf.reduce_sum(outputs*mytf.expand_dims_by_k(self.probs, 2), 0)
-      # bs
-      ts = tf.range(mytf.shape_list(self.probs)[0])
-      times = tf.reduce_sum(self.probs * mytf.expand_dims_by_k(tf.to_float(ts), 1), 0)
-      time_loss = tf.reduce_mean(times)
-    elif FLAGS.output_layer == 3:
-      output = tf.reduce_mean(outputs, 0)
-    else:
-      raise ValueError("Unknown value for FLAGS.output_layer")
-    self.layer_outputs = mytf.softmax(outputs)
     self.output = mytf.softmax(output) # batch_size x length x noclass
 
     # Calculate cross-entropy loss and normalize it.
@@ -456,9 +390,8 @@ class NeuralGPUAtSize(object):
     if hasattr(self, 'probs'):
       feed_out['probs'] = self.probs
     feed_out['loss'] = self.loss
-    feed_out['layer_outputs'] = self.layer_outputs
+    #feed_out['layer_outputs'] = self.layer_outputs
     feed_out['output'] = self.output
-    feed_out['attention'] = self.attention_probs
     res = sess.run(feed_out, feed_in)
     return neural_curriculum.NeuralGPUResult(res, inp, target, taskid)
 
