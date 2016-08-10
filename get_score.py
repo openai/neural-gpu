@@ -410,7 +410,7 @@ if __name__ == '__main__':
                 pylab.title('Task %s' % task)
                 maxy = None
                 if key == 'errors':
-                    maxy = 6
+                    maxy = 10
                 pylab.ylim((0, maxy))
                 pylab.xlim((0, None))
         #pylab.tight_layout()
