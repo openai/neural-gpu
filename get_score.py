@@ -99,10 +99,17 @@ def get_dfs(dirname, tasknames):
         fname = dirname+'/log0'
     data_series = {t:{} for t in tasknames}
     for d in get_scores_dict(fname):
+        lens = d['len'].split('/')
+        missing = [i for i in range(len(tasknames)) if lens[i] != '41'] or [len(tasknames)-1]
         for key in d:
             vals = d[key].split('/')
             if len(vals) == 1:
                 vals *= len(tasknames)
+            elif len(vals) == len(missing):
+                vals2 = [np.nan]*len(tasknames)
+                for i, v in zip(missing, vals):
+                    vals2[i] = v
+                vals = vals2
             elif len(vals) < len(tasknames): #Failed to get data for one
                 vals = [np.nan]*len(tasknames)
             for val, task in zip(vals, tasknames):
