@@ -97,7 +97,7 @@ def define_flags():
   tf.app.flags.DEFINE_bool("print_one", True, "Print one example each evaluation")
   tf.app.flags.DEFINE_bool("normalize", False, "Normalize activations in initialization")
 
-  tf.app.flags.DEFINE_bool("output_layer", 0, "Which layer to output.")
+  tf.app.flags.DEFINE_integer("output_layer", 0, "Which layer to output.")
   tf.app.flags.DEFINE_integer("input_height", 1, "Input height.")
 
   tf.app.flags.DEFINE_integer("progressive_curriculum", 0, "Whether to use progressive curriculum.")

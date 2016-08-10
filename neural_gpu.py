@@ -231,7 +231,9 @@ class NeuralGPUAtSize(object):
     mask = tf.to_float(mytf.expand_dims_by_k(bmask, 2))
     return mask
 
-  def looping_layer(self, cur, index):
+  def looping_layer(self, cur, index, *args):
+    if FLAGS.output_layer == 1:
+      output, = args
     cutoff = self.config.cutoff
     kw = self.config.kw
     kh = self.config.kh
@@ -246,10 +248,15 @@ class NeuralGPUAtSize(object):
         cur = tf.nn.dropout(cur, keep_prob)
         cur = gru_block(cur, kw, kh, nmaps, cutoff, self.mask, 'lookup',
                         self.initializer, nconvs, extras=self.extras)
-        cur = tf.select(tf.greater_equal(self.output_layers, index + it), cur, old)
-
+        if FLAGS.output_layer == 1:
+          output += cur
+        else:
+          cur = tf.select(tf.greater_equal(self.output_layers, index + it), cur, old)
         #layers.append(cur)
-    return (cur, index + self.config.rx_step)
+    if FLAGS.output_layer == 1:
+      return (cur, index + self.config.rx_step, output)
+    else:
+      return (cur, index + self.config.rx_step)
 
   def construct_all_layers(self, first, mask):
     # first: batch_size x length x height x nmaps
@@ -274,14 +281,19 @@ class NeuralGPUAtSize(object):
     it = tf.Variable(0, name='layer_index')
     use_swap = self.config.nmaps > 256
     num_layers = int(self.config.layer_scale*self.length)
-    cur, it = tf.while_loop(lambda cur, it: it < num_layers,
+    args = [cur, it] + ([tf.zeros_like(cur)] if FLAGS.output_layer == 1 else [])
+    result = tf.while_loop(lambda cur, it, *args: it < num_layers,
                             self.looping_layer,
-                            [cur, it],
+                            args,
                             parallel_iterations=1,
                             swap_memory=use_swap)
+    if FLAGS.output_layer == 1:
+      ans = result[-1]
+    else:
+      ans = result[0]
     #while it < self.length:
     #  cur, it = self.looping_layer(cur, it)
-    return cur
+    return ans
 
   def _get_first_layer(self, mask):
     """Turn the input into a batch_size x length x height x nmaps tensor"""
@@ -333,8 +345,6 @@ class NeuralGPUAtSize(object):
     # Final loss: cross-entropy + shared parameter relaxation part.
     relax_dist, self.model.avg_op = relaxed_distance(self.config.rx_step)
     total_loss = perp_loss + relax_dist * self.model.pull
-    if FLAGS.output_layer == 2:
-      total_loss += 0.001 * time_loss
     if FLAGS.do_binarization:
       binary_gaps = 1 - tf.abs(self.layers)
       self.binary_gap = tf.reduce_mean(binary_gaps * mask) / tf.reduce_mean(mask)
