@@ -100,7 +100,10 @@ def get_dfs(dirname, tasknames):
     data_series = {t:{} for t in tasknames}
     for d in get_scores_dict(fname):
         lens = d['len'].split('/')
-        missing = [i for i in range(len(tasknames)) if lens[i] != '41'] or [len(tasknames)-1]
+        if 'progressive_curriculum=5' in lens:
+            missing = [i for i in range(len(tasknames)) if lens[i] != '41'] or [len(tasknames)-1]
+        else:
+            missing = []
         for key in d:
             vals = d[key].split('/')
             if len(vals) == 1:
