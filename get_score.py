@@ -39,6 +39,7 @@ parser.add_argument("--one-legend", type=bool, default=True)
 parser.add_argument("--skip-dir", action='store_true')
 parser.add_argument("--success", action='store_true')
 parser.add_argument("--recache", action='store_true')
+parser.add_argument("--separate_seeds", action='store_true')
 parser.add_argument("--median", action='store_true')
 parser.add_argument("--smoothing", type=int, default='1')
 parser.add_argument('files', type=str, nargs='+',
@@ -263,7 +264,8 @@ def remove_defaults(fname):
     return fname
 
 def get_key(fname):
-    fname = fname.split('-seed')[0]
+    if not args.separate_seeds:
+        fname = fname.split('-seed')[0]
     fname = '/'.join(fname.split('/')[-args.dirs_in_name:])
     fname = remove_defaults(fname)
     return fname
