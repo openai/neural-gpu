@@ -42,6 +42,7 @@ parser.add_argument("--recache", action='store_true')
 parser.add_argument("--separate_seeds", action='store_true')
 parser.add_argument("--median", action='store_true')
 parser.add_argument("--smoothing", type=int, default='1')
+parser.add_argument("--remove_strings", type=str, default='')
 parser.add_argument('files', type=str, nargs='+',
                     help='Log files to examine')
 
@@ -101,13 +102,13 @@ def get_dfs(dirname, tasknames):
     data_series = {t:{} for t in tasknames}
     for d in get_scores_dict(fname):
         lens = d['len'].split('/')
-        if 'progressive_curriculum=5' in lens:
+        if 'progressive_curriculum=5' in fname:
             missing = [i for i in range(len(tasknames)) if lens[i] != '41'] or [len(tasknames)-1]
         else:
             missing = []
         for key in d:
             vals = d[key].split('/')
-            if len(vals) == 1:
+            if len(vals) == 1 and key == 'step':
                 vals *= len(tasknames)
             elif len(vals) == len(missing):
                 vals2 = [np.nan]*len(tasknames)
@@ -198,6 +199,8 @@ class Scores(object):
 
 def get_name(fname):
     fname = remove_defaults(fname)
+    for s in args.remove_strings.split('|'):
+        fname = fname.replace(s, '')
     return '/'.join(fname.split('/')[:2])
 
 def plot_start(key):
@@ -293,6 +296,7 @@ def plot_all(func, scores, column=None, taskset=None):
                 continue
             columns = [score.get_scores(column, task)
                        for score in d[key]]
+            columns = [c for c in columns if c is not None and not c.isnull().all()]
             def strip_last(c):
                 if c is None or c.index[-1] != 200200:
                     return c
@@ -307,7 +311,11 @@ def plot_all(func, scores, column=None, taskset=None):
             if not len(data):
                 func(score.args_str(), None)
                 continue
-            data.loc[data.first_valid_index()] = data.loc[data.first_valid_index()].fillna(1)
+            try:
+                loc = data.first_valid_index()
+            except IndexError:
+                continue
+            data.loc[loc] = data.loc[loc].fillna(1)
             data = data.interpolate(method='nearest')
             func(score.args_str(), data)
 
@@ -385,18 +393,25 @@ if __name__ == '__main__':
             title = os.path.split(args.files[0])[-2]
         title += '\nCommon args: %s' % prefix
         pylab.suptitle(title)
+        goal_xlim = None
+        axes = [[None for _ in range(len(all_tasks))] for _ in range(len(keys))]
         for ki, key in enumerate(keys):
             for i, task in enumerate(all_tasks):
                 plot_index = ki*len(all_tasks) + i+1
                 print("Subplot %s/%s" % (plot_index, len(all_tasks)*len(keys)))
-                pylab.subplot(len(keys), len(all_tasks), plot_index)
+                sharex = axes[0][i]
+                axes[ki][i] = pylab.subplot(len(keys), len(all_tasks), plot_index,
+                                            sharex=sharex)
                 plot_start(key)
                 plot_all(plot_results, scores, column=key, taskset = [task])
                 if not args.one_legend or (ki == len(keys)-1 and
                                            (i == len(all_tasks)-1 or 1)):
                     pylab.legend(loc=legend_locs.get(key, 0))
                 pylab.title('Task %s' % task)
-                pylab.ylim((0, None))
-                pylab.xlim((0,None))
+                maxy = None
+                if key == 'errors':
+                    maxy = 6
+                pylab.ylim((0, maxy))
+                pylab.xlim((0, None))
         #pylab.tight_layout()
         pylab.show()
