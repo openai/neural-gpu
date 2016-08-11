@@ -23,7 +23,6 @@ import matplotlib.ticker as mtick
 
 rc('font',  size='12')
 rc('axes', labelsize='large')
-rc('lines', linewidth=3)
 
 rc('axes', prop_cycle="cycler('color', ['b','g','r','c','m','y','k'] + "
    "['orange', 'darkgreen', 'indigo', 'gold', 'fuchsia'])")
@@ -65,7 +64,7 @@ parser.add_argument("--nbinsy", type=str, default='')
 
 parser.add_argument("--xticks", type=str, default='')
 parser.add_argument("--yticks", type=str, default='')
-
+parser.add_argument("--lw", type=int, default=3)
 
 parser.add_argument('--traces', dest='traces', action='store_true')
 parser.add_argument('--no-traces', dest='traces', action='store_false')
@@ -183,7 +182,10 @@ class Scores(object):
     def last_loc(self):
         options = ([d.index[-1] for d in self.result_dfs.values()] +
                    [d.index[-1] for d in self.dfs.values()])
-        return max(options or [3])
+        ans = max(options or [3])
+        if ans == 200200:
+            ans -= 200
+        return ans
 
     def get_scores(self, key, task):
         if key == RESULT:
@@ -244,8 +246,9 @@ def plot_starty(key):
 
 def plot_results(fname, frame):
     label = get_name(fname)#fname
+    fmt = dict()
     if frame is None: #Just put in legend
-        pylab.plot([], label=label, marker='o')
+        pylab.plot([], label=label, **fmt)
         return
     x = frame.index
     ysets = list(frame.T.values)
@@ -257,7 +260,7 @@ def plot_results(fname, frame):
     y = np.median(ysets, axis=1) if args.median else ysets.mean(axis=1)
     v=pylab.plot(x, y,
                label=label,
-               marker='o',
+               **fmt
     )
     if args.traces:
         for ys in list(ysets.T):
@@ -344,7 +347,12 @@ def plot_all(func, scores, column=None, taskset=None):
                     badkeys.add((key, task))
                     continue
             median_len = np.median([len(c) for c in columns if c is not None])
-            data = pd.DataFrame([c for c in columns if c is not None and len(c) >= median_len / 2 and len(c) >= args.min_length]).T
+            if column != 'score':
+                columns = [c for c in columns if len(c) >= median_len / 2 and len(c) >= args.min_length]
+            else:
+                length_fn = lambda c: c.last_valid_index() // 200
+                columns = [c for c in columns if length_fn(c) >= median_len / 2 and length_fn(c) >= args.min_length]
+            data = pd.DataFrame(columns).T
             if not len(data):
                 func(score.args_str(), None)
                 continue
@@ -431,6 +439,7 @@ if __name__ == '__main__':
                 ans[key] = get_print_results(scores, key)
             print(yaml.safe_dump(ans))
     elif args.job == 'plot':
+        rc('lines', linewidth=args.lw)
         title = args.title
         if not title:
             title = os.path.split(args.files[0])[-2]
@@ -487,14 +496,17 @@ if __name__ == '__main__':
                     lambda x, pos: '%dk' % (x//1000) if x else '0'
                 ))
         #import ipdb;ipdb.set_trace()
+        rect = [0,0,1,.92]
         if args.global_legend:
             lines,labels = axes[0][0].get_legend_handles_labels()
             my_labels = args.global_legend.split('|')
             if my_labels == ['1']:
                 my_labels = labels
-            fig.legend(lines, my_labels,
-                       loc='lower center', ncol=2, labelspacing=0.)
-        gs.tight_layout(fig, rect=[0, 0.1, 1, 0.92])
+            if my_labels != ['0']:
+                fig.legend(lines, my_labels,
+                           loc='lower center', ncol=2, labelspacing=0.)
+                rect = [0, 0.1, 1, 0.92]
+        gs.tight_layout(fig, rect=rect)
         if args.save_to:
             pylab.savefig(args.save_to)
         else:
