@@ -17,9 +17,16 @@ import re
 
 import collections
 import pylab
+from matplotlib import rc
+import matplotlib.gridspec as gridspec
+import matplotlib.ticker as mtick
 
-pylab.rcParams['axes.prop_cycle'] = ("cycler('color', ['b','g','r','c','m','y','k'] + "
-                                     "['orange', 'darkgreen', 'indigo', 'gold', 'fuchsia'])")
+rc('font',  size='12')
+rc('axes', labelsize='large')
+rc('lines', linewidth=3)
+
+rc('axes', prop_cycle="cycler('color', ['b','g','r','c','m','y','k'] + "
+   "['orange', 'darkgreen', 'indigo', 'gold', 'fuchsia'])")
 #pylab.rcParams['axes.prop_cycle'] = ("cycler('color', 'bgrcmyk'*2)")
 
 parser = argparse.ArgumentParser(description='Get scores')
@@ -27,24 +34,42 @@ parser = argparse.ArgumentParser(description='Get scores')
 RESULT='score'
 
 
-parser.add_argument("--key", type=str, default="len,score,errors")
+parser.add_argument("--key", type=str, default="seq-errors,score")
 parser.add_argument("--job", type=str, default='plot')
 parser.add_argument("--task", type=str, default=None)
 parser.add_argument("--exclude_opts", type=str, default=None)
 parser.add_argument("--title", type=str, default='')
+parser.add_argument("--titles", type=str, default='')
 parser.add_argument("--savedir", type=str, default='')
 parser.add_argument("--min-length", type=int, default=2)
-parser.add_argument("--dirs-in-name", type=int, default=2)
+parser.add_argument("--dirs-in-name", type=int, default=1)
 parser.add_argument("--one-legend", type=bool, default=True)
+parser.add_argument("--global-legend", type=str, default='')
+parser.add_argument("--save-to", type=str, default='')
 parser.add_argument("--skip-dir", action='store_true')
 parser.add_argument("--success", action='store_true')
 parser.add_argument("--recache", action='store_true')
 parser.add_argument("--separate_seeds", action='store_true')
 parser.add_argument("--median", action='store_true')
-parser.add_argument("--smoothing", type=int, default='1')
+parser.add_argument("--std", type=bool, default=True)
+parser.add_argument("--smoothing", type=int, default='11')
 parser.add_argument("--remove_strings", type=str, default='')
+parser.add_argument("--remove_strings2", type=str, default='')
 parser.add_argument('files', type=str, nargs='+',
                     help='Log files to examine')
+parser.add_argument("--xlims", type=str, default='')
+parser.add_argument("--ylims", type=str, default='')
+
+parser.add_argument("--nbinsx", type=str, default='')
+parser.add_argument("--nbinsy", type=str, default='')
+
+parser.add_argument("--xticks", type=str, default='')
+parser.add_argument("--yticks", type=str, default='')
+
+
+parser.add_argument('--traces', dest='traces', action='store_true')
+parser.add_argument('--no-traces', dest='traces', action='store_false')
+parser.set_defaults(traces=False)
 
 memory = joblib.Memory(cachedir='/home/ecprice/neural_gpu/cache',
                        verbose=1)
@@ -178,7 +203,11 @@ class Scores(object):
                 task = self.dfs.keys()[0]
             if task not in self.dfs:
                 return None
-            return self.dfs[task].get(key)
+            if key in ['errors', 'seq-errors']:
+                scale = 0.01
+            else:
+                scale = 1
+            return self.dfs[task].get(key) * scale
 
     def _load_results(self):
         if self.result_dfs:
@@ -199,12 +228,17 @@ class Scores(object):
 
 def get_name(fname):
     fname = remove_defaults(fname)
+    for s in args.remove_strings2.split('|'):
+        fname = fname.replace(s, '')
     return '/'.join(fname.split('/')[:2])
 
-def plot_start(key):
+def plot_startx(key):
     pylab.xlabel('Steps of training')
+def plot_starty(key):
     if key:
-        pylab.ylabel(key)
+        mapping = {'score': 'Test error',
+                   'seq-errors': 'Training error',}
+        pylab.ylabel(mapping.get(key, key))
     else:
         pylab.ylabel('Sequence error on large input')
 
@@ -225,10 +259,11 @@ def plot_results(fname, frame):
                label=label,
                marker='o',
     )
-    for ys in list(ysets.T):
-        pylab.plot(x, ys, alpha=0.2,
-                   color=v[0].get_color(),
-        )
+    if args.traces:
+        for ys in list(ysets.T):
+            pylab.plot(x, ys, alpha=0.2,
+                       color=v[0].get_color(),
+            )
     pylab.fill_between(frame.index, ysets.min(axis=1), ysets.max(axis=1),
                        alpha=0.15, color=v[0].get_color())
 
@@ -371,6 +406,12 @@ def construct_parsed_data(scores, columns, save_dir):
 def is_valid_dir(f):
     return os.path.exists(os.path.join(f, 'log0'))
 
+def get_value(s, i):
+    v = s.split('|')
+    if len(v) == 1:
+        return v[0]
+    return v[i]
+
 if __name__ == '__main__':
     args =  parser.parse_args()
     recache.do_recache = args.recache
@@ -393,27 +434,68 @@ if __name__ == '__main__':
         title = args.title
         if not title:
             title = os.path.split(args.files[0])[-2]
-        title += '\nCommon args: %s' % prefix
-        pylab.suptitle(title)
+            title += '\nCommon args: %s' % prefix
+        pylab.suptitle(title, size=18)
         goal_xlim = None
         axes = [[None for _ in range(len(all_tasks))] for _ in range(len(keys))]
+
+        xlims = [map(float, c.split(',')) for c in args.xlims.split(';') if c]
+        ylims = [map(float, c.split(',')) for c in args.ylims.split(';') if c]
+        fig = pylab.figure(1)
+        gs = gridspec.GridSpec(len(keys), len(all_tasks))
         for ki, key in enumerate(keys):
             for i, task in enumerate(all_tasks):
-                plot_index = ki*len(all_tasks) + i+1
-                print("Subplot %s/%s" % (plot_index, len(all_tasks)*len(keys)))
+                plot_index = ki*len(all_tasks) + i
+                print("Subplot %s/%s" % (plot_index+1, len(all_tasks)*len(keys)))
                 sharex = axes[0][i]
-                axes[ki][i] = pylab.subplot(len(keys), len(all_tasks), plot_index,
-                                            sharex=sharex)
-                plot_start(key)
+                axes[ki][i] = fig.add_subplot(gs[plot_index], sharex=sharex)
+                if ki == len(keys)-1:
+                    plot_startx(key)
+                if i == 0:
+                    plot_starty(key)
                 plot_all(plot_results, scores, column=key, taskset = [task])
-                if not args.one_legend or (ki == len(keys)-1 and
-                                           (i == len(all_tasks)-1 or 1)):
+                if not args.global_legend and (not args.one_legend or (ki == len(keys)-1 and
+                                           (i == len(all_tasks)-1 or 1))):
                     pylab.legend(loc=legend_locs.get(key, 0))
-                pylab.title('Task %s' % task)
+                if not args.titles:
+                    pylab.title('Task %s' % task)
+                else:
+                    pylab.title(args.titles.split('|')[plot_index])
                 maxy = None
-                if key == 'errors':
-                    maxy = 10
-                pylab.ylim((0, maxy))
-                pylab.xlim((0, None))
-        #pylab.tight_layout()
-        pylab.show()
+                if key in ('score', 'errors', 'seq-errors'):
+                    maxy = 1
+                    axes[ki][i].yaxis.set_major_formatter(mtick.FuncFormatter(
+                        lambda x, pos: '% 2d%%' % (x*100)
+                    ))
+                if ylims:
+                    pylab.ylim(ylims[ki])
+                else:
+                    pylab.ylim((0, maxy))
+                if xlims:
+                    pylab.xlim(xlims[i])
+                else:
+                    pylab.xlim((0, None))
+
+                if args.nbinsx:
+                    pylab.locator_params(axis='x',nbins=int(get_value(args.nbinsx, i)))
+                if args.nbinsy:
+                    pylab.locator_params(axis='y',nbins=int(get_value(args.nbinsy, ki)))
+                if args.yticks:
+                    pylab.yticks(map(float, get_value(args.yticks, ki).split(',')))
+
+                axes[ki][i].xaxis.set_major_formatter(mtick.FuncFormatter(
+                    lambda x, pos: '%dk' % (x//1000) if x else '0'
+                ))
+        #import ipdb;ipdb.set_trace()
+        if args.global_legend:
+            lines,labels = axes[0][0].get_legend_handles_labels()
+            my_labels = args.global_legend.split('|')
+            if my_labels == ['1']:
+                my_labels = labels
+            fig.legend(lines, my_labels,
+                       loc='lower center', ncol=2, labelspacing=0.)
+        gs.tight_layout(fig, rect=[0, 0.1, 1, 0.92])
+        if args.save_to:
+            pylab.savefig(args.save_to)
+        else:
+            pylab.show()

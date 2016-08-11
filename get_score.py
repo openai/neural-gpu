@@ -108,7 +108,7 @@ def get_dfs(dirname, tasknames):
             missing = []
         for key in d:
             vals = d[key].split('/')
-            if len(vals) == 1 and key == 'step':
+            if len(vals) == 1 and (key == 'step' or not missing):
                 vals *= len(tasknames)
             elif len(vals) == len(missing):
                 vals2 = [np.nan]*len(tasknames)
@@ -199,8 +199,6 @@ class Scores(object):
 
 def get_name(fname):
     fname = remove_defaults(fname)
-    for s in args.remove_strings.split('|'):
-        fname = fname.replace(s, '')
     return '/'.join(fname.split('/')[:2])
 
 def plot_start(key):
@@ -248,6 +246,7 @@ def get_tasks(key):
 
 def remove_defaults(fname):
     for default in ['max_steps=200000',
+                    'max_steps=40000',
                     'forward_max=201',
 #                    'forward_max=401',
                     'max_length=41',
@@ -257,6 +256,7 @@ def remove_defaults(fname):
                     'do_shifter=0',
                     'cutoff_tanh=0.0',
                     'input_height=2',
+                    'batch_size=32',
                     ]:
         fname = fname.replace(default+'-', '')
         if fname.endswith(default):
@@ -264,6 +264,8 @@ def remove_defaults(fname):
     fname = fname.replace('badde,baddet', 'badde')
     fname = fname.replace('baddet,badde', 'baddet')
     fname = re.sub('(task=[^-]*)-(nmaps=[0-9]*)', r'\2-\1', fname)
+    for s in args.remove_strings.split('|'):
+        fname = fname.replace(s, '')
     return fname
 
 def get_key(fname):
