@@ -103,6 +103,7 @@ def define_flags():
   tf.app.flags.DEFINE_bool("taskid", False, "Feed task id to algorithm")
 
   tf.app.flags.DEFINE_integer("do_globalsum", 0, "Feed global sum to everyone.")
+  tf.app.flags.DEFINE_bool("always_large", False, "Perform the large test even when the model is inaccurate")
 
 FLAGS = tf.app.flags.FLAGS
 if not FLAGS.__parsed: # Hack so reload() works
@@ -372,7 +373,7 @@ def run_evaluation(sess, model, batch_size):
         break
     if FLAGS.print_one:
       data.print_out(result.to_string(0))
-    if seq_err < 0.05:  # Run larger test if we're good enough.
+    if seq_err < 0.05 or FLAGS.always_large:  # Run larger test if we're good enough.
       _, seq_err, result = multi_test(data.forward_max, model, sess, task,
                               FLAGS.nprint, batch_size * 4)
       data.print_out("LARGE ERROR: %s %s %s"  % (global_step, seq_err, task))
