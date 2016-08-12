@@ -23,6 +23,7 @@ import matplotlib.gridspec as gridspec
 import matplotlib.ticker as mtick
 
 rc('font',  size='12')
+rc('text', usetex=True)
 rc('axes', labelsize='large')
 
 rc('axes', prop_cycle="cycler('color', ['b','g','r','c','m','y','k'] + "
@@ -239,7 +240,9 @@ def get_name(fname):
     fname = remove_defaults(fname)
     for s in args.remove_strings2.split('|'):
         fname = fname.replace(s, '')
-    return '/'.join(fname.split('/')[:2])
+    ans = '/'.join(fname.split('/')[:2])
+    ans = ans.replace('_', r'\_')
+    return ans
 
 def plot_startx(key):
     pylab.xlabel('Steps of training')
