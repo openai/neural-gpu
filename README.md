@@ -99,5 +99,5 @@ Requirements
 Credits
 =======
 
-Original code by Lukasz Kaiser (lukaszkaiser)
-Modified by Eric Price (ecprice)
+Original code by Lukasz Kaiser (lukaszkaiser).  Modified by Eric Price
+(ecprice)
