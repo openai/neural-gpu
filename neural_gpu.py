@@ -218,6 +218,13 @@ class NeuralGPUAtSize(object):
         cur = tf.nn.dropout(cur, keep_prob)
         cur = gru_block(cur, kw, kh, nmaps, cutoff, self.mask, 'lookup',
                         nconvs, extras=self.extras)
+
+        if FLAGS.do_batchnorm:
+          if FLAGS.do_batchnorm == 1:
+            cur = mytf.batch_norm(cur, self.do_training, scope='bn')
+          elif FLAGS.do_batchnorm == 2:
+            cur = mytf.batch_norm(cur, self.do_training, self.mask, scope='bn')
+
         if FLAGS.output_layer == 1:
           output += cur
         else:
