@@ -163,7 +163,7 @@ def load_model(sess, checkpoint_dir):
 
 def get_checkpoint_dir():
   #return FLAGS.train_dir + ('-seed%s-pid%s' % (FLAGS.random_seed, os.getpid()))
-  return FLAGS.train_dir + ('-seed%s' % (FLAGS.random_seed,))
+  return FLAGS.train_dir
 
 def get_config_from_flags(checkpoint_dir = None):
   # Set random seed.

@@ -32,7 +32,7 @@ smoothing:
 
 """
 USERNAME = os.environ['USER']
-DROPPED_KEYS = ('random_seed', 'max_steps', 'time_till_eval')
+DROPPED_KEYS = ('max_steps', 'time_till_eval')
 
 def find_free_gpus(num_needed):
     all_gpu_status = cirrascale.client.get_gpu_status()

@@ -16,7 +16,7 @@ import collections
 parser = argparse.ArgumentParser(description='Get scores')
 
 parser.add_argument("--metric", type=str, default='score')
-parser.add_argument("--dir", type=str, default='/home/ecprice/neural_parsed_logs')
+parser.add_argument("--dir", type=str, default='/home/ecprice/neural_parsed_logs/newer')
 parser.add_argument("--curr", type=bool, default=True)
 parser.add_argument("tasks", type=str, nargs='*')
 args =  parser.parse_args()

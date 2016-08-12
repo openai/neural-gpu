@@ -18,6 +18,7 @@ import re
 import collections
 import pylab
 from matplotlib import rc
+import matplotlib
 import matplotlib.gridspec as gridspec
 import matplotlib.ticker as mtick
 
@@ -50,6 +51,8 @@ parser.add_argument("--success", action='store_true')
 parser.add_argument("--recache", action='store_true')
 parser.add_argument("--separate_seeds", action='store_true')
 parser.add_argument("--median", action='store_true')
+parser.add_argument("--order", type=str, default='')
+parser.add_argument("--colorcycle", type=str, default='')
 parser.add_argument("--std", type=bool, default=True)
 parser.add_argument("--smoothing", type=int, default='11')
 parser.add_argument("--remove_strings", type=str, default='')
@@ -69,6 +72,10 @@ parser.add_argument("--lw", type=int, default=3)
 parser.add_argument('--traces', dest='traces', action='store_true')
 parser.add_argument('--no-traces', dest='traces', action='store_false')
 parser.set_defaults(traces=False)
+
+parser.add_argument('--simplify', dest='simplify', action='store_true')
+parser.add_argument('--no-simplify', dest='simplify', action='store_false')
+parser.set_defaults(simplify=True)
 
 memory = joblib.Memory(cachedir='/home/ecprice/neural_gpu/cache',
                        verbose=1)
@@ -299,8 +306,9 @@ def remove_defaults(fname):
         fname = fname.replace(default+'-', '')
         if fname.endswith(default):
             fname = fname[:-len(default)-1]
-    fname = fname.replace('badde,baddet', 'badde')
-    fname = fname.replace('baddet,badde', 'baddet')
+    if args.simplify:
+        fname = fname.replace('badde,baddet', 'badde')
+        fname = fname.replace('baddet,badde', 'baddet')
     fname = re.sub('(task=[^-]*)-(nmaps=[0-9]*)', r'\2-\1', fname)
     for s in args.remove_strings.split('|'):
         fname = fname.replace(s, '')
@@ -321,14 +329,20 @@ def get_prefix(fileset):
     return longest_cp[:len(longest_cp)+ 1-i]
 
 badkeys = set()
-def plot_all(func, scores, column=None, taskset=None):
+def plot_all(func, scores, column=None, taskset=None, order=None):
     d = {}
     for s in scores:
         d.setdefault(s.key, []).append(s)
 
-    for key in sorted(d):
+    keys = sorted(d)
+    ordered_keys = []
+    for key in keys:
         if matches(key, args.exclude_opts):
             continue
+        ordered_keys.append(key)
+    if order:
+        ordered_keys = [ordered_keys[i-1] for i in order]
+    for key in ordered_keys:
         for task in d[key][0].tasknames:
             if (key, task) in badkeys:
                 continue
@@ -351,7 +365,7 @@ def plot_all(func, scores, column=None, taskset=None):
                 columns = [c for c in columns if len(c) >= median_len / 2 and len(c) >= args.min_length]
             else:
                 length_fn = lambda c: c.last_valid_index() // 200
-                columns = [c for c in columns if length_fn(c) >= median_len / 2 and length_fn(c) >= args.min_length]
+                columns = [c for c in columns if length_fn(c) >= median_len / 2 and length_fn(c) >= args.min_length and len(c) > 1]
             data = pd.DataFrame(columns).T
             if not len(data):
                 func(score.args_str(), None)
@@ -374,7 +388,7 @@ def get_filter(column):
     else:
         return lambda x: x < 0.01
 
-def get_print_results(scores, column, avg=5):
+def get_print_results(scores, column, avg=10):
     assert len(set(x.key for x in scores)) == 1
     ans = {}
     for task in scores[0].tasknames:
@@ -396,6 +410,8 @@ def get_print_results(scores, column, avg=5):
 def construct_parsed_data(scores, columns, save_dir):
     d = {}
     for s in scores:
+        if s.total_steps() < 50000:
+            continue
         d.setdefault(s.key, []).append(s)
 
     for i, key in enumerate(d):
@@ -439,6 +455,13 @@ if __name__ == '__main__':
                 ans[key] = get_print_results(scores, key)
             print(yaml.safe_dump(ans))
     elif args.job == 'plot':
+        if args.colorcycle:
+            if ',' in args.colorcycle:
+                lst = args.colorcycle.split(',')
+            else:
+                lst = list(args.colorcycle)
+            rc('axes', prop_cycle=matplotlib.cycler('color', lst))
+
         rc('lines', linewidth=args.lw)
         title = args.title
         if not title:
@@ -462,7 +485,10 @@ if __name__ == '__main__':
                     plot_startx(key)
                 if i == 0:
                     plot_starty(key)
-                plot_all(plot_results, scores, column=key, taskset = [task])
+                order = get_value(args.order, i)
+                if order:
+                    order = map(int, order.split(','))
+                plot_all(plot_results, scores, column=key, taskset = [task], order=order)
                 if not args.global_legend and (not args.one_legend or (ki == len(keys)-1 and
                                            (i == len(all_tasks)-1 or 1))):
                     pylab.legend(loc=legend_locs.get(key, 0))

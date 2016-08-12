@@ -331,7 +331,7 @@ def get_filter(column):
     else:
         return lambda x: x < 0.01
 
-def get_print_results(scores, column, avg=5):
+def get_print_results(scores, column, avg=10):
     assert len(set(x.key for x in scores)) == 1
     ans = {}
     for task in scores[0].tasknames:
@@ -353,6 +353,8 @@ def get_print_results(scores, column, avg=5):
 def construct_parsed_data(scores, columns, save_dir):
     d = {}
     for s in scores:
+        if s.total_steps() < 100000:
+            continue
         d.setdefault(s.key, []).append(s)
 
     for i, key in enumerate(d):

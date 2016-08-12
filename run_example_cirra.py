@@ -1,21 +1,16 @@
 import collections
 import generic_run
 
-LABEL = 'July-06-02-choices'
+LABEL = 'test-example-directory'
 
-param_sets = [[('random_seed', seed),
-               ('nmaps', nm),
+param_sets = [[('nmaps', nm),
                ('task', task),
-               ('do_outchoice', oc),
-               ('progressive_curriculum', ',' in task)
+               ('progressive_curriculum', 5),
+               ('random_seed', seed),
                ]
               for seed in range(2)
-              for task in ['scopy', 'sdup', 'scopy,sdup', 'sdup,scopy',
-                           'sbadde,sbadd']
-              for nm in [24, 128]
-              for oc in [False, True]
-#              for gs in [0, 6, 24]
-              #[0,2,4,5,6,7,8,9]
+              for task in ['bmul', 'mul', 'bmul,mul', 'bmul,qmul,mul']
+              for nm in [24, 128, 256]
               ]
 
 
