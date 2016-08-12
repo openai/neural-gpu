@@ -176,6 +176,7 @@ class BetterCurriculum(Curriculum):
     return val
 
 class NeuralGPUResult(object):
+  """Result of a single batch"""
   grad_norm = None
   back_update = None
   loss = None
@@ -238,6 +239,7 @@ def plot_many_examples(sess, model, max_length, generator, batch_size,
     result.plot_attention(dirpat % l)
 
 class ResultsRecord(object):
+  """Result from many runs of training, on many tasks"""
   def __init__(self, batch_size):
     self.batch_size = batch_size
     self.record_for_task = {}
@@ -264,6 +266,7 @@ class ResultsRecord(object):
     return ' '.join(stat_list)
 
 class ResultsRecordPerTask(object):
+  """Result of many batches on a single task"""
   def __init__(self, batch_size):
     self.batch_size = batch_size
 

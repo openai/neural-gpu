@@ -95,7 +95,6 @@ def define_flags():
   tf.app.flags.DEFINE_integer("do_shifter", 0, "Whether shift stuff at each layer.")
 
   tf.app.flags.DEFINE_bool("print_one", True, "Print one example each evaluation")
-  tf.app.flags.DEFINE_bool("normalize", False, "Normalize activations in initialization")
 
   tf.app.flags.DEFINE_integer("output_layer", 0, "Which layer to output.")
   tf.app.flags.DEFINE_integer("input_height", 1, "Input height.")
@@ -234,8 +233,6 @@ def initialize(sess, checkpoint_dir=None):
   model = cls(config)
   data.print_out("Created model.")
   sess.run(tf.initialize_all_variables())
-  if FLAGS.normalize:
-    model.renormalize(sess)
   data.print_out("Initialized variables.")
 
   # Load model from parameters if a checkpoint exists.
@@ -440,7 +437,10 @@ def start_and_train():
 
 
 def animate(l, test_data, anim_size):
-  """Create animation for the given data (hacky matplotlib use)."""
+  """Create animation for the given data (hacky matplotlib use).
+
+  ecprice: This has not been tested and probably does not work.
+  """
   xf = 12  # Extra frames to slow down at start and end.
   fps = 2  # Frames per step.
 

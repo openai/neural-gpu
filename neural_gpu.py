@@ -55,34 +55,7 @@ def tanh_cutoff(x, cutoff):
   glo, ghi = (-tcut, tcut) if tcut else (None, None)
   return tf_cut_function(z, -1, 1, glo, ghi)
 
-class VariableInitializer(object):
-
-  def __init__(self):
-    self.variable_usages = {}
-
-  def record_variable(self, var, x, y):
-    self.variable_usages.setdefault(var, [])
-    self.variable_usages[var].append((x,y))
-
-  def get_feed(self):
-    return {}
-    ans = {}
-    for k, lst in self.variable_usages.items():
-      norms = [[tf.sqrt(tf.reduce_sum(v ** 2)) for v in pair] for pair in lst]
-      ratios = [n1/n2 for n1, n2 in norms]
-      ans[k] = ratios
-    return ans
-
-  def use_feed(self, sess, result):
-    return
-    ops = []
-    for k in self.variable_usages:
-      ratio = np.median(result[k])
-      #print 'initial scaling %s %s : %s' % (k.op.name, ratio, result[k])
-      ops.append(tf.assign(k, k * ratio))
-    sess.run(ops)
-
-def conv_linear(arg, kw, kh, nout, prefix, initializer, bias=0):
+def conv_linear(arg, kw, kh, nout, prefix, bias=0):
   """Convolutional linear map."""
   strides = [1, 1, 1, 1]
   if isinstance(arg, list):
@@ -94,7 +67,6 @@ def conv_linear(arg, kw, kh, nout, prefix, initializer, bias=0):
   with tf.variable_scope(prefix):
     k = tf.get_variable("CvK", [kw, kh, nin, nout])
     res = mytf.conv2d(arg, k, strides, "SAME")
-    initializer.record_variable(k, arg, res)
 
     if bias is None:
       return res
@@ -102,34 +74,33 @@ def conv_linear(arg, kw, kh, nout, prefix, initializer, bias=0):
                                 initializer=tf.constant_initializer(0.0))
     return res + bias_term + float(bias)
 
-def conv_gru(mem, kw, kh, nmaps, cutoff, prefix, initializer, extras=[]):
+def conv_gru(mem, kw, kh, nmaps, cutoff, prefix, extras=[]):
   """Convolutional GRU."""
   # mem shape: bs x length x height x nmaps
   def conv_lin(arg, suffix, bias_start):
     return conv_linear(extras + [arg], kw, kh, nmaps,
-                       prefix + "/" + suffix, initializer, bias=bias_start)
+                       prefix + "/" + suffix, bias=bias_start)
   reset = sigmoid_cutoff(conv_lin(mem, "r", 1), cutoff)
   candidate = tanh_cutoff(conv_lin(reset * mem, "c", 0), FLAGS.cutoff_tanh)
   gate = sigmoid_cutoff(conv_lin(mem, "g", 1), cutoff)
   return gate * mem + (1 - gate) * candidate
 
-def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, initializer, nconvs=2,
+def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, nconvs=2,
                  extras = []):
   old = cur
   for i in xrange(nconvs):
-    cur = conv_linear(extras + [cur], kw, kh, nmaps, "cgru_%d_%s" % (i, suffix),
-                      initializer)
+    cur = conv_linear(extras + [cur], kw, kh, nmaps, "cgru_%d_%s" % (i, suffix))
     if i == nconvs - 1:
       cur = old + cur
     cur = tf.nn.relu(cur * mask)
   return cur
 
-def lstm_block(cur, kw, kh, nmaps, cutoff, mask, suffix, initializer, nconvs=2,
+def lstm_block(cur, kw, kh, nmaps, cutoff, mask, suffix, nconvs=2,
                extras = []):
   # Do nconvs-many CGRU steps.
   for layer in xrange(nconvs):
     cur = conv_gru(cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix),
-                   initializer, extras = extras)
+                   extras = extras)
     cur *= mask
   return cur
 
@@ -220,7 +191,6 @@ class NeuralGPUAtSize(object):
 
     self.task = tf.placeholder(tf.uint8, shape=(None,), name="task")
 
-    self.initializer = VariableInitializer()
     self.construct_graph(adam)
 
   def construct_mask(self) :
@@ -247,7 +217,7 @@ class NeuralGPUAtSize(object):
         old = cur
         cur = tf.nn.dropout(cur, keep_prob)
         cur = gru_block(cur, kw, kh, nmaps, cutoff, self.mask, 'lookup',
-                        self.initializer, nconvs, extras=self.extras)
+                        nconvs, extras=self.extras)
         if FLAGS.output_layer == 1:
           output += cur
         else:
@@ -310,7 +280,7 @@ class NeuralGPUAtSize(object):
     # First image comes from start by applying one convolution and adding 0s.
     # first: batch_size x length x height x nmaps
     if FLAGS.original_non_binary:
-      first = conv_linear(start, 1, 1, nmaps, "input", self.initializer)
+      first = conv_linear(start, 1, 1, nmaps, "input")
     else:
       first = start
     padding_height = height - mytf.shape_list(first)[2]
@@ -332,7 +302,7 @@ class NeuralGPUAtSize(object):
     last_layer = self.construct_all_layers(first, mask)
 
     # Final convolution to get logits, list outputs.
-    layer_output = conv_linear(last_layer[:,:,:1,:], 1, 1, noclass, "output", self.initializer)
+    layer_output = conv_linear(last_layer[:,:,:1,:], 1, 1, noclass, "output")
     output = mytf.safe_squeeze(layer_output, -2) # batch x length x noclass
 
     self.output = mytf.softmax(output) # batch_size x length x noclass
@@ -365,14 +335,6 @@ class NeuralGPUAtSize(object):
 
   def __repr__(self):
     return '<NeuralGPUAtSize %s>' % (self.length)
-
-  def get_initial_scaling(self, sess, batch_size=32):
-    feed = self.initializer.get_feed()
-    batch = (np.random.randint(0, self.config.niclass, (batch_size, self.length)),
-             np.random.randint(0, self.config.noclass, (batch_size, self.length)),
-             np.random.randint(0, 1, batch_size))
-    result = self.step(sess, batch, more_feed=feed)
-    self.initializer.use_feed(sess, result.feed_out)
 
   def step(self, sess, batch, do_backward=False, get_steps=False, more_feed={}):
     """Run a step of the network."""
@@ -460,9 +422,6 @@ class NeuralGPU(object):
     inp, target, taskid = batch
     instance = self.get_instance_for_length(target.shape[-1])
     return instance.step(sess, batch, *args, **kws)
-
-  def renormalize(self, sess):
-    self.instances[0].get_initial_scaling(sess)
 
   def simple_step(self, sess, a):
     """Run a simple operation on one input.
