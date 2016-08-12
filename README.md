@@ -27,7 +27,8 @@ Running many instances
 
 To run multiple jobs on OpenAI's cirrascale cluster, copy
 `run_example_cirra.py` into a file (e.g. `run_1.py`), edit it to have
-the desired set of parameters to run, and run `python run_1.py`.
+the desired set of parameters to run, and run `python run_1.py`.  It
+will store the state in the `servers/` directory.
 
 This creates a screen session on several cirrascale servers, which you
 can ssh into and watch if you want.  When you want to kill the jobs,
