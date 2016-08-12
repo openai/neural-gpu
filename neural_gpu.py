@@ -204,11 +204,6 @@ class NeuralGPUAtSize(object):
   def looping_layer(self, cur, index, *args):
     if FLAGS.output_layer == 1:
       output, = args
-    cutoff = self.config.cutoff
-    kw = self.config.kw
-    kh = self.config.kh
-    nmaps = self.config.nmaps
-    nconvs = self.config.nconvs
     keep_prob = 1.0 - tf.to_float(self.do_training) * (self.config.dropout * 8.0 / self.length)
     for it in xrange(self.config.rx_step):
       with tf.variable_scope("RX%d" % it) as vs:
@@ -216,8 +211,9 @@ class NeuralGPUAtSize(object):
         #  vs.reuse_variables()
         old = cur
         cur = tf.nn.dropout(cur, keep_prob)
-        cur = gru_block(cur, kw, kh, nmaps, cutoff, self.mask, 'lookup',
-                        nconvs, extras=self.extras)
+        cur = gru_block(cur, self.config.kw, self.config.kh, self.config.nmaps,
+                        self.config.cutoff, self.mask, 'lookup',
+                        self.config.nconvs, extras=self.extras)
 
         if FLAGS.do_batchnorm:
           if FLAGS.do_batchnorm == 1:
