@@ -20,7 +20,7 @@ parser.add_argument('gpuoff', nargs='?', type=int, default=0)
 EXPERIMENT = 'neural-gpu'
 
 def to_str(params):
-    return '-'.join(['%s=%s' % (k, params[k]) for k in params if k != 'random_seed'])
+    return '-'.join(['%s=%s' % (k, params[k]) for k in params])
 
 def short_name(params):
     return hashlib.sha224(str(params)).hexdigest()[:10]

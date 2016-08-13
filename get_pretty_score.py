@@ -298,6 +298,7 @@ def remove_defaults(fname):
                     'forward_max=201',
 #                    'forward_max=401',
                     'max_length=41',
+                    'always_large=True',
                     'do_resnet=False',
                     'do_binarization=0.0',
                     'do_batchnorm=0',
@@ -309,6 +310,8 @@ def remove_defaults(fname):
         fname = fname.replace(default+'-', '')
         if fname.endswith(default):
             fname = fname[:-len(default)-1]
+    if fname.startswith('random_seed='):
+        fname = fname.split('-', 1)[1]
     if args.simplify:
         fname = fname.replace('badde,baddet', 'badde')
         fname = fname.replace('baddet,badde', 'baddet')
@@ -503,7 +506,7 @@ if __name__ == '__main__':
                 if key in ('score', 'errors', 'seq-errors'):
                     maxy = 1
                     axes[ki][i].yaxis.set_major_formatter(mtick.FuncFormatter(
-                        lambda x, pos: '% 2d%%' % (x*100)
+                        lambda x, pos: '% 2d\\%%' % (x*100)
                     ))
                 if ylims:
                     pylab.ylim(ylims[ki])
