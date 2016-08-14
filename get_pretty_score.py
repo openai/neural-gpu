@@ -14,6 +14,7 @@ import shutil
 import joblib
 import functools
 import re
+import pickle
 
 import collections
 import pylab
@@ -55,6 +56,7 @@ parser.add_argument("--median", action='store_true')
 parser.add_argument("--order", type=str, default='')
 parser.add_argument("--colorcycle", type=str, default='')
 parser.add_argument("--std", type=bool, default=True)
+parser.add_argument("--only-same", type=bool, default=False)
 parser.add_argument("--smoothing", type=int, default='11')
 parser.add_argument("--remove_strings", type=str, default='')
 parser.add_argument("--remove_strings2", type=str, default='')
@@ -66,13 +68,24 @@ parser.add_argument("--ylims", type=str, default='')
 parser.add_argument("--nbinsx", type=str, default='')
 parser.add_argument("--nbinsy", type=str, default='')
 
+parser.add_argument("--overlay", type=int, default=1)
+parser.add_argument("--only-plot", type=str, default=None)
+
 parser.add_argument("--xticks", type=str, default='')
 parser.add_argument("--yticks", type=str, default='')
 parser.add_argument("--lw", type=int, default=3)
+parser.add_argument("--figsize", type=str, default='')
 
 parser.add_argument('--traces', dest='traces', action='store_true')
 parser.add_argument('--no-traces', dest='traces', action='store_false')
 parser.set_defaults(traces=False)
+
+parser.add_argument('--startx', dest='startx', action='store_true')
+parser.add_argument('--no-startx', dest='startx', action='store_false')
+parser.set_defaults(startx=True)
+parser.add_argument('--starty', dest='starty', action='store_true')
+parser.add_argument('--no-starty', dest='starty', action='store_false')
+parser.set_defaults(starty=True)
 
 parser.add_argument('--simplify', dest='simplify', action='store_true')
 parser.add_argument('--no-simplify', dest='simplify', action='store_false')
@@ -191,7 +204,7 @@ class Scores(object):
         options = ([d.index[-1] for d in self.result_dfs.values()] +
                    [d.index[-1] for d in self.dfs.values()])
         ans = max(options or [3])
-        if ans == 200200:
+        if ans == 200200 or ans == 60200:
             ans -= 200
         return ans
 
@@ -313,8 +326,12 @@ def remove_defaults(fname):
     if fname.startswith('random_seed='):
         fname = fname.split('-', 1)[1]
     if args.simplify:
+        fname = fname.replace('badd,baddt', 'badd')
+        fname = fname.replace('baddt,badd', 'baddt')
         fname = fname.replace('badde,baddet', 'badde')
         fname = fname.replace('baddet,badde', 'baddet')
+        fname = fname.replace('baddz,baddzt', 'baddz')
+        fname = fname.replace('baddzt,baddz', 'baddzt')
     fname = re.sub('(task=[^-]*)-(nmaps=[0-9]*)', r'\2-\1', fname)
     for s in args.remove_strings.split('|'):
         fname = fname.replace(s, '')
@@ -334,13 +351,16 @@ def get_prefix(fileset):
         i += 1
     return longest_cp[:len(longest_cp)+ 1-i]
 
+def sort_key_fn(label):
+    return label.replace('nmaps=24', 'nmaps=024')
+
 badkeys = set()
 def plot_all(func, scores, column=None, taskset=None, order=None):
     d = {}
     for s in scores:
         d.setdefault(s.key, []).append(s)
 
-    keys = sorted(d)
+    keys = sorted(d, key=sort_key_fn)
     ordered_keys = []
     for key in keys:
         if matches(key, args.exclude_opts):
@@ -372,6 +392,7 @@ def plot_all(func, scores, column=None, taskset=None, order=None):
             else:
                 length_fn = lambda c: c.last_valid_index() // 200
                 columns = [c for c in columns if length_fn(c) >= median_len / 2 and length_fn(c) >= args.min_length and len(c) > 1]
+                #import ipdb;ipdb.set_trace()
             data = pd.DataFrame(columns).T
             if not len(data):
                 func(score.args_str(), None)
@@ -436,13 +457,111 @@ def construct_parsed_data(scores, columns, save_dir):
 def is_valid_dir(f):
     return os.path.exists(os.path.join(f, 'log0'))
 
+gs = None
+
+def run_plots(args, scores, all_tasks, keys):
+    global gs
+    if args.colorcycle:
+        if ',' in args.colorcycle:
+            lst = args.colorcycle.split(',')
+        else:
+            lst = list(args.colorcycle)
+        rc('axes', prop_cycle=matplotlib.cycler('color', lst))
+
+    rc('lines', linewidth=args.lw)
+    title = args.title
+    if not title:
+        title = os.path.split(args.files[0])[-2]
+    pylab.suptitle(title, size=18)
+    goal_xlim = None
+    axes = [[None for _ in range(len(all_tasks))] for _ in range(len(keys))]
+
+    figkws = {}
+    if args.figsize:
+        figkws['figsize']=map(int, args.figsize.split(','))
+    fig = pylab.figure(1,**figkws)
+    task_overlays = args.overlay
+    if gs is None:
+        gs = gridspec.GridSpec(len(keys), len(all_tasks) / task_overlays)
+    for ki, key in enumerate(keys):
+        for i, task in enumerate(all_tasks):
+            full_plot_index = ki*len(all_tasks) + i
+            plot_index = full_plot_index // task_overlays
+            if args.only_plot and plot_index + 1 != int(args.only_plot.split(',')[0]):
+                continue
+            print("Subplot %s/%s" % (full_plot_index+1, len(all_tasks)*len(keys)))
+            sharex = axes[0][i]
+            if args.only_plot:
+                newloc = int(args.only_plot.split(',')[1])
+                ax = fig.add_subplot(gs[newloc-1])
+                axes[ki][i] = ax
+            else:
+                axes[ki][i] = fig.add_subplot(gs[plot_index], sharex=sharex)
+            if ki == len(keys)-1 and args.startx:
+                plot_startx(key)
+            if i == 0 and args.starty:
+                plot_starty(key)
+            order = get_value(args.order, i)
+            if order:
+                order = map(int, order.split(','))
+            plot_all(plot_results, scores, column=key, taskset = [task], order=order)
+            if not args.global_legend and (not args.one_legend or (ki == len(keys)-1 and
+                                       (i == len(all_tasks)-1 or 1))):
+                pylab.legend(loc=legend_locs.get(key, 0))
+            if not args.titles:
+                pylab.title('Task %s' % task)
+            else:
+                pylab.title(args.titles.split('|')[plot_index])
+            maxy = None
+            if key in ('score', 'errors', 'seq-errors'):
+                maxy = 1
+                axes[ki][i].yaxis.set_major_formatter(mtick.FuncFormatter(
+                    lambda x, pos: '% 2d\\%%' % (x*100)
+                ))
+            ylims = map(float, get_value(args.ylims, ki).split(',')) if args.ylims else (0,1)
+            pylab.ylim(ylims)
+            xlims = map(float, get_value(args.xlims, i).split(',')) if args.xlims else (0,None)
+            pylab.xlim(xlims)
+
+            if args.nbinsx:
+                pylab.locator_params(axis='x',nbins=int(get_value(args.nbinsx, i)))
+            if args.nbinsy:
+                pylab.locator_params(axis='y',nbins=int(get_value(args.nbinsy, ki)))
+            if args.yticks:
+                pylab.yticks(map(float, get_value(args.yticks, ki).split(',')))
+
+            axes[ki][i].xaxis.set_major_formatter(mtick.FuncFormatter(
+                lambda x, pos: '%dk' % (x//1000) if x else '0'
+            ))
+    #import ipdb;ipdb.set_trace()
+    rect = [0,0,1,.92]
+    if args.global_legend:
+        if not args.only_plot:
+            ax = [row for row in axes if row[0]][0][0]
+        lines,labels = ax.get_legend_handles_labels()
+        my_labels = args.global_legend.split('|')
+        if my_labels == ['1']:
+            my_labels = labels
+        if my_labels != ['0']:
+            if my_labels != ['2']:
+                fig.legend(lines, my_labels, loc='lower center',
+                           ncol=2, labelspacing=0.)
+            rect = [0, 0.1, 1, 0.92]
+    gs.tight_layout(fig, rect=rect)
+    if args.save_to:
+        pylab.savefig(args.save_to)
+    else:
+        pylab.show()
+
 def get_value(s, i):
     v = s.split('|')
     if len(v) == 1:
         return v[0]
     return v[i]
 
-if __name__ == '__main__':
+
+def main():
+    global args
     args =  parser.parse_args()
     recache.do_recache = args.recache
     print("Started")
@@ -461,85 +580,26 @@ if __name__ == '__main__':
                 ans[key] = get_print_results(scores, key)
             print(yaml.safe_dump(ans))
     elif args.job == 'plot':
-        if args.colorcycle:
-            if ',' in args.colorcycle:
-                lst = args.colorcycle.split(',')
-            else:
-                lst = list(args.colorcycle)
-            rc('axes', prop_cycle=matplotlib.cycler('color', lst))
+        run_plots(args, scores, all_tasks, keys)
 
-        rc('lines', linewidth=args.lw)
-        title = args.title
-        if not title:
-            title = os.path.split(args.files[0])[-2]
-            title += '\nCommon args: %s' % prefix
-        pylab.suptitle(title, size=18)
-        goal_xlim = None
-        axes = [[None for _ in range(len(all_tasks))] for _ in range(len(keys))]
+'''
+python  get_pretty_score.py cachedlogs/{Jul,A}*/*24*={b,}add{e,z,}*  --task badd,badde,baddz,add,adde,addz --remove_strings '|-progressive_|curriculum=2|curriculum=5' --exclude='forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|badd,add'  --min-length 30 --title 'Alignment helps addition' --titles='||Binary addition, 24 filters|'  --xlims='0,30000' --nbinsx=3 --global-legend='Padded|Aligned|Unpadded' --overlay=3 --save-to=moo.pdf --no-startx dump magic1.pickle
+python get_pretty_score.py cachedlogs/{Jul,A}*/*128*={b,}add{e,z,}*  --task badd,badde,baddz,add,adde,addz --remove_strings '|-progressive_|curriculum=2|curriculum=5' --exclude='kbadd|qbadd|qadd|3badd|3add|kadd|curric|forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|badd,add|curriculum'  --min-length 30 --title 'Alignment helps addition' --titles='Binary, 128 filters|Decimal, 128 filters||'  --xlims='0,60000' --nbinsx=3  --overlay=3 --save-to=moo.pdf --global-legend='Padded|Aligned|Unpadded'
 
-        xlims = [map(float, c.split(',')) for c in args.xlims.split(';') if c]
-        ylims = [map(float, c.split(',')) for c in args.ylims.split(';') if c]
-        fig = pylab.figure(1)
-        gs = gridspec.GridSpec(len(keys), len(all_tasks))
-        for ki, key in enumerate(keys):
-            for i, task in enumerate(all_tasks):
-                plot_index = ki*len(all_tasks) + i
-                print("Subplot %s/%s" % (plot_index+1, len(all_tasks)*len(keys)))
-                sharex = axes[0][i]
-                axes[ki][i] = fig.add_subplot(gs[plot_index], sharex=sharex)
-                if ki == len(keys)-1:
-                    plot_startx(key)
-                if i == 0:
-                    plot_starty(key)
-                order = get_value(args.order, i)
-                if order:
-                    order = map(int, order.split(','))
-                plot_all(plot_results, scores, column=key, taskset = [task], order=order)
-                if not args.global_legend and (not args.one_legend or (ki == len(keys)-1 and
-                                           (i == len(all_tasks)-1 or 1))):
-                    pylab.legend(loc=legend_locs.get(key, 0))
-                if not args.titles:
-                    pylab.title('Task %s' % task)
-                else:
-                    pylab.title(args.titles.split('|')[plot_index])
-                maxy = None
-                if key in ('score', 'errors', 'seq-errors'):
-                    maxy = 1
-                    axes[ki][i].yaxis.set_major_formatter(mtick.FuncFormatter(
-                        lambda x, pos: '% 2d\\%%' % (x*100)
-                    ))
-                if ylims:
-                    pylab.ylim(ylims[ki])
-                else:
-                    pylab.ylim((0, maxy))
-                if xlims:
-                    pylab.xlim(xlims[i])
-                else:
-                    pylab.xlim((0, None))
+python  get_pretty_score.py cachedlogs/{Jul,A}*/*24*=bmul{e,z,}-*  --task mul,mule,mulz,bmul,bmule,bmulz --remove_strings '|-progressive_|curriculum=2|curriculum=5|max_steps=80000-' --exclude='forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|batchn|resn|layer'  --min-length 30 --title 'Alignment hurts multiplication'  --overlay=3 --global-legend=2  --titles '|||Binary multiplication, 24 filters' --no-startx --xlims='0,200000' --save-to=moo.pdf dump magic3.pickle
 
-                if args.nbinsx:
-                    pylab.locator_params(axis='x',nbins=int(get_value(args.nbinsx, i)))
-                if args.nbinsy:
-                    pylab.locator_params(axis='y',nbins=int(get_value(args.nbinsy, ki)))
-                if args.yticks:
-                    pylab.yticks(map(float, get_value(args.yticks, ki).split(',')))
+python  get_pretty_score.py cachedlogs/{Jul,A}*/*128*=bmul{e,z,}-*  --task mul,mule,mulz,bmul,bmule,bmulz --remove_strings '|-progressive_|curriculum=2|curriculum=5|max_steps=80000-' --exclude='forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|batchn|resn|layer'  --min-length 30 --title 'Alignment helps addition, hurts multiplication'  --overlay=3 --global-legend=2  --titles '|||Binary multiplication, 128 filters' --save-to=moo.pdf dump magic4.pickle
 
-                axes[ki][i].xaxis.set_major_formatter(mtick.FuncFormatter(
-                    lambda x, pos: '%dk' % (x//1000) if x else '0'
-                ))
-        #import ipdb;ipdb.set_trace()
-        rect = [0,0,1,.92]
-        if args.global_legend:
-            lines,labels = axes[0][0].get_legend_handles_labels()
-            my_labels = args.global_legend.split('|')
-            if my_labels == ['1']:
-                my_labels = labels
-            if my_labels != ['0']:
-                fig.legend(lines, my_labels,
-                           loc='lower center', ncol=2, labelspacing=0.)
-                rect = [0, 0.1, 1, 0.92]
-        gs.tight_layout(fig, rect=rect)
-        if args.save_to:
-            pylab.savefig(args.save_to)
-        else:
-            pylab.show()
+'''
+if __name__ == '__main__':
+    if sys.argv[1] == 'magic':
+        for i, loc in enumerate(['3,1', '3,3', '4,2', '4,4']):
+            sys.argv[1:] = pickle.load(open('magic%s.pickle' % (i+1))) + ['--only-plot', loc]
+            main()
+        sys.exit()
+    if len(sys.argv) > 1 and 'dump' == sys.argv[-2]:
+        loc = sys.argv.pop()
+        sys.argv.pop()
+        pickle.dump(sys.argv[1:], open(loc, 'w'))
+        sys.exit()
+    main()
