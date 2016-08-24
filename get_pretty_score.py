@@ -308,9 +308,11 @@ def get_tasks(key):
 def remove_defaults(fname):
     for default in ['max_steps=200000',
                     'max_steps=40000',
+                    'max_steps=100000',
                     'forward_max=201',
 #                    'forward_max=401',
                     'max_length=41',
+                    'time_till_eval=4',
                     'always_large=True',
                     'do_resnet=False',
                     'do_binarization=0.0',
@@ -391,8 +393,8 @@ def plot_all(func, scores, column=None, taskset=None, order=None):
                 columns = [c for c in columns if len(c) >= median_len / 2 and len(c) >= args.min_length]
             else:
                 length_fn = lambda c: c.last_valid_index() // 200
+                median_len = np.median(map(length_fn, columns))
                 columns = [c for c in columns if length_fn(c) >= median_len / 2 and length_fn(c) >= args.min_length and len(c) > 1]
-                #import ipdb;ipdb.set_trace()
             data = pd.DataFrame(columns).T
             if not len(data):
                 func(score.args_str(), None)
@@ -533,7 +535,6 @@ def run_plots(args, scores, all_tasks, keys):
             axes[ki][i].xaxis.set_major_formatter(mtick.FuncFormatter(
                 lambda x, pos: '%dk' % (x//1000) if x else '0'
             ))
-    #import ipdb;ipdb.set_trace()
     rect = [0,0,1,.92]
     if args.global_legend:
         if not args.only_plot:
@@ -583,10 +584,10 @@ def main():
         run_plots(args, scores, all_tasks, keys)
 
 '''
-python  get_pretty_score.py cachedlogs/{Jul,A}*/*24*={b,}add{e,z,}*  --task badd,badde,baddz,add,adde,addz --remove_strings '|-progressive_|curriculum=2|curriculum=5' --exclude='forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|badd,add'  --min-length 30 --title 'Alignment helps addition' --titles='||Binary addition, 24 filters|'  --xlims='0,30000' --nbinsx=3 --global-legend='Padded|Aligned|Unpadded' --overlay=3 --save-to=moo.pdf --no-startx dump magic1.pickle
-python get_pretty_score.py cachedlogs/{Jul,A}*/*128*={b,}add{e,z,}*  --task badd,badde,baddz,add,adde,addz --remove_strings '|-progressive_|curriculum=2|curriculum=5' --exclude='kbadd|qbadd|qadd|3badd|3add|kadd|curric|forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|badd,add|curriculum'  --min-length 30 --title 'Alignment helps addition' --titles='Binary, 128 filters|Decimal, 128 filters||'  --xlims='0,60000' --nbinsx=3  --overlay=3 --save-to=moo.pdf --global-legend='Padded|Aligned|Unpadded'
+python  get_pretty_score.py cachedlogs/{Jul,A}*/*24*={b,}add{e,z,}*  --task badd,badde,baddz,add,adde,addz --remove_strings '|-progressive_|curriculum=2|curriculum=5' --exclude='forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|badd,add|batchnorm|resnet'  --min-length 30 --title 'Alignment helps addition' --titles='||Binary addition, 24 filters|'  --xlims='0,30000' --nbinsx=3 --global-legend='Padded|Aligned|Unpadded' --overlay=3 --save-to=moo.pdf --no-startx dump magic1.pickle
+python get_pretty_score.py cachedlogs/{Jul,A}*/*128*={b,}add{e,z,}*  --task badd,badde,baddz,add,adde,addz --remove_strings '|-progressive_|curriculum=2|curriculum=5' --exclude='kbadd|qbadd|qadd|3badd|3add|kadd|curric|forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|badd,add|curriculum|resnet|batchn'  --min-length 30 --title 'Alignment helps addition' --titles='Binary, 128 filters|Decimal, 128 filters||'  --xlims='0,30000' --nbinsx=3  --overlay=3 --save-to=moo.pdf --global-legend='Padded|Aligned|Unpadded' dump magic2.pickle
 
-python  get_pretty_score.py cachedlogs/{Jul,A}*/*24*=bmul{e,z,}-*  --task mul,mule,mulz,bmul,bmule,bmulz --remove_strings '|-progressive_|curriculum=2|curriculum=5|max_steps=80000-' --exclude='forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|batchn|resn|layer'  --min-length 30 --title 'Alignment hurts multiplication'  --overlay=3 --global-legend=2  --titles '|||Binary multiplication, 24 filters' --no-startx --xlims='0,200000' --save-to=moo.pdf dump magic3.pickle
+python  get_pretty_score.py cachedlogs/{Jul,A}*/*24*=bmul{e,z,}-*  --task mul,mule,mulz,bmul,bmule,bmulz --remove_strings '|-progressive_|curriculum=2|curriculum=5|max_steps=80000-' --exclude='forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|batchn|resn|layer'  --min-length 30 --title 'Alignment hurts multiplication'  --overlay=3 --global-legend=2  --titles '|||Binary multiplication, 24 filters' --no-startx --xlims='0,100000' --save-to=moo.pdf dump magic3.pickle
 
 python  get_pretty_score.py cachedlogs/{Jul,A}*/*128*=bmul{e,z,}-*  --task mul,mule,mulz,bmul,bmule,bmulz --remove_strings '|-progressive_|curriculum=2|curriculum=5|max_steps=80000-' --exclude='forward_max|rx_step|cutoff|binar|grad_noise|t,|dropout|batchn|resn|layer'  --min-length 30 --title 'Alignment helps addition, hurts multiplication'  --overlay=3 --global-legend=2  --titles '|||Binary multiplication, 128 filters' --save-to=moo.pdf dump magic4.pickle
 
