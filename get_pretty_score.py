@@ -308,6 +308,8 @@ def get_tasks(key):
 def remove_defaults(fname):
     for default in ['max_steps=200000',
                     'max_steps=40000',
+                    'max_steps=60000',
+                    'max_steps=80000',
                     'max_steps=100000',
                     'forward_max=201',
 #                    'forward_max=401',
@@ -318,6 +320,7 @@ def remove_defaults(fname):
                     'do_binarization=0.0',
                     'do_batchnorm=0',
                     'do_shifter=0',
+                    'progressive_curriculum=False',
                     'cutoff_tanh=0.0',
                     'input_height=2',
                     'batch_size=32',
@@ -327,6 +330,9 @@ def remove_defaults(fname):
             fname = fname[:-len(default)-1]
     if fname.startswith('random_seed='):
         fname = fname.split('-', 1)[1]
+    if 'task' in fname and len(fname.split('task=')[1].split('-')[0].split(',')) == 1:
+        for s in ['2', '3', '4', '5', 'True']:
+            fname = fname.replace('-progressive_curriculum=%s' % s, '')
     if args.simplify:
         fname = fname.replace('badd,baddt', 'badd')
         fname = fname.replace('baddt,badd', 'baddt')
