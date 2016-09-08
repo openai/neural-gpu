@@ -385,6 +385,16 @@ def run_evaluation(sess, model, batch_size):
       multi_test(data.forward_max, model, sess, task, FLAGS.nprint,
                  batch_size * 16, 0)
 
+def checkpoint(sess, model, checkpoint_dir):
+  checkpoint_path = os.path.join(checkpoint_dir, "neural_gpu.ckpt")
+  global_step, = sess.run( [model.global_step])
+  model.saver.save(sess, checkpoint_path,
+                   global_step=model.global_step,
+                   write_meta_graph=False)
+  with open(os.path.join(checkpoint_dir, 'neural_gpu_curriculum.ckpt'), 'w') as f:
+    yaml.dump(model.curriculum, f)
+
+
 def train_loop(sess, model, batch_size, checkpoint_dir):
   time_till_ckpt = FLAGS.time_till_ckpt
   time_till_eval = FLAGS.time_till_eval
@@ -405,13 +415,7 @@ def train_loop(sess, model, batch_size, checkpoint_dir):
     if time_till_ckpt == 0:
       time_till_ckpt = FLAGS.time_till_ckpt
       timer = Timer("saving checkpoint")
-      checkpoint_path = os.path.join(checkpoint_dir, "neural_gpu.ckpt")
-      global_step, = sess.run( [model.global_step])
-      model.saver.save(sess, checkpoint_path,
-                       global_step=model.global_step,
-                       write_meta_graph=False)
-      with open(os.path.join(checkpoint_dir, 'neural_gpu_curriculum.ckpt'), 'w') as f:
-        yaml.dump(model.curriculum, f)
+      checkpoint(sess, model, checkpoint_dir)
       timer.done()
 
     # Run evaluation.
@@ -426,6 +430,7 @@ def train_loop(sess, model, batch_size, checkpoint_dir):
     global_step, = sess.run( [model.global_step])
     if FLAGS.max_steps and global_step  > FLAGS.max_steps:
       data.print_out("Finished all %s steps" % global_step)
+      checkpoint(sess, model, checkpoint_dir)
       break
 
 def start_and_train():
