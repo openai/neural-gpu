@@ -428,7 +428,7 @@ def train_loop(sess, model, batch_size, checkpoint_dir):
       timer.done()
 
     global_step, = sess.run( [model.global_step])
-    if FLAGS.max_steps and global_step  > FLAGS.max_steps:
+    if FLAGS.max_steps and global_step  >= FLAGS.max_steps:
       data.print_out("Finished all %s steps" % global_step)
       checkpoint(sess, model, checkpoint_dir)
       break
