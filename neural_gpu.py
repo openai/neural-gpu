@@ -251,6 +251,7 @@ class NeuralGPUAtSize(object):
     self.mask = mask
     self.extras = extras
     self.output_layers = output_layers
+    # XXX this should be tf.get_variable so it gets reused
     it = tf.Variable(0, name='layer_index')
     use_swap = bool(self.config.nmaps > 256 or (FLAGS.do_batchnorm and self.config.nmaps == 128))
     num_layers = int(self.config.layer_scale*self.length)

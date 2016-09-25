@@ -146,10 +146,11 @@ def log_parameters(checkpoint_dir):
   log_output = open(os.path.join(checkpoint_dir, 'results'), 'a', 1)
   step_output = open(os.path.join(checkpoint_dir, 'steps'), 'a', 1)
 
-def load_model(sess, checkpoint_dir):
+def load_model(sess, checkpoint_dir, reconfig={}):
   # possibly tf.reset_default_graph()
   with open(os.path.join(checkpoint_dir, 'all_args')) as f:
     options = yaml.load(f)
+  options.update(reconfig)
   FLAGS._parse_flags()
   FLAGS.__flags.update(options)
   data.forward_max = max(FLAGS.forward_max, data.bins[-1])
