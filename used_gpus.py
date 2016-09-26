@@ -1,3 +1,4 @@
+"""List GPUs I'm using on this machine"""
 import subprocess
 
 def used_by_pid(pid):

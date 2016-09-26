@@ -1,3 +1,11 @@
+"""Several classes used by NeuralGPU:
+
+NeuralConfig contains the configuration, updated from FLAGS.
+Curriculum and its subclasses decide when to choose which instance
+NeuralGPUResult records what happened during one run of the NeuralGPU
+ResultsRecord keeps track of the results during one stage of training.
+"""
+
 import data_utils
 import numpy as np
 
@@ -176,7 +184,7 @@ class BetterCurriculum(Curriculum):
     return val
 
 class NeuralGPUResult(object):
-  """Result of a single batch"""
+  """Recover of result of a single batch, which is always on one task."""
   grad_norm = None
   back_update = None
   loss = None

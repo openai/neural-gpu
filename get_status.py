@@ -1,3 +1,5 @@
+"""List the status of my jobs"""
+
 #!/usr/bin/python3
 from __future__ import print_function
 

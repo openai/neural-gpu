@@ -1,2 +1,7 @@
 *.pyc
 *~
+*.pdf
+*.aux
+*.log
+*.pickle
+*.csv

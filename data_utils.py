@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Convolutional Gated Recurrent Networks for Algorithm Learning."""
+"""Utilities for the NeuralGPU
+
+This file has two main components:
+
+ - generators is a dict mapping task names to DataGenerator instances, which construct individual problem input/output pairs
+ - Utilities for converting those input/output pairs to/from string representations.
+"""
 
 import math
 import random
@@ -27,10 +33,9 @@ from tensorflow.python.platform import gfile
 
 FLAGS = tf.app.flags.FLAGS
 
+# Lengths of NeuralGPU instances.  Inputs will be padded to the next
+# larger one.
 bins = [8, 12, 16, 20, 24, 28, 32, 36, 40, 48, 64, 128]
-all_tasks = ["sort", "kvsort", "id", "rev", "rev2", "incr", "add", "left",
-             "right", "left-shift", "right-shift", "bmul", "mul", "dup",
-             "badd", "qadd", "search"]
 forward_max = 128
 log_filename = ""
 
@@ -71,6 +76,7 @@ def from_base(lst, b):
 generators = {}
 
 class DataGenerator(object):
+  """The base class for generating problem input/output pairs"""
   nclass = 33
   name = '<unknown task>'
   taskid = 0
@@ -78,13 +84,15 @@ class DataGenerator(object):
   min_length = 1
 
   def is_valid_length(self, l):
+    """Can this problem have instances of length l?"""
     return True
 
   def rand_pair(self, length):
-    """Random data pair for a task. Total length should be <= l."""
+    """Random data pair for a task. Total length should be <= length."""
     raise NotImplementedError()
 
   def rand_pair_padded(self, length):
+    """Construct a random data pair, then pad the inputs to a valid size."""
     pad_length = pad(length)
     inp, outp = self.rand_pair(length)
     inp = np.array(inp)
@@ -97,6 +105,7 @@ class DataGenerator(object):
     return inp, outp
 
   def get_batch(self, length, batch_size):
+    """Construct a complete batch of problem instances"""
     inps, outps = [], []
     for _ in xrange(batch_size):
       inp, outp = self.rand_pair_padded(length)
@@ -114,6 +123,7 @@ class DataGenerator(object):
     return "<%s name='%s' taskid=%s>" % (self.__class__.__name__, self.name, self.taskid)
 
 class OpGenerator(DataGenerator):
+  """Generator for instances using operations on two variables in some base"""
   min_length = 3
 
   def __init__(self, base, f, sep, zero_pad=True):
@@ -164,6 +174,7 @@ generators.update(dict(baddz=OpGenerator(2, operator.add, 11, False),
                        mulz=OpGenerator(10, operator.mul, 16, False),))
 
 class ToughAddGenerator(OpGenerator):
+  """More adversarial inputs for addition"""
   def __init__(self, base, sep, zero_pad=True):
     super(ToughAddGenerator, self).__init__(base, operator.add, sep, zero_pad)
 
@@ -190,6 +201,7 @@ generators.update(dict(baddt=ToughAddGenerator(2, 11),
 
 
 class AlignedOpGenerator(OpGenerator):
+  """Two-line binary inputs"""
   min_length = 2
   def rand_pair(self, l):
     k = int((l-1 - 2*PADDING)//2)
@@ -334,6 +346,7 @@ generators.update(dict(scopy=CopyGenerator(10),
 
 
 class MultiOpGenerator(DataGenerator):
+  """Inputs where a single operation can appear many times"""
   def __init__(self, base, f, sep, num, zero_chance=1, zero_pad=True):
     self.base = base
     self.f = f
@@ -381,6 +394,7 @@ generators.update({'kbadd':MultiOpGenerator(2, operator.add, 11, None),
                    })
 
 class ExpressionGenerator(DataGenerator):
+  """Inputs where each character has a chance of being a random operator."""
   min_length = 1
 
   def __init__(self, base, operators, op_chance):

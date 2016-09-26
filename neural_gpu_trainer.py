@@ -36,13 +36,8 @@ import neural_gpu
 import neural_curriculum
 import mytf
 
-# XXX backwards compatibility hack
-old_true_flags = ['--progressive_curriculum']
-for f in old_true_flags:
-  if f + '=True' in sys.argv:
-    sys.argv[sys.argv.index(f+'=True')] = f+'=1'
-
 def define_flags():
+  """This is placed in a function so reload() works"""
   tf.app.flags.DEFINE_float("lr", 0.001, "Learning rate.")
   tf.app.flags.DEFINE_float("init_weight", 1.0, "Initial weights deviation.")
   tf.app.flags.DEFINE_float("max_grad_norm", 1.0, "Clip gradients to this norm.")
@@ -303,6 +298,7 @@ def multi_test(l, model, sess, task, nprint, batch_size, offset=None):
   return errors, seq_err, result
 
 class Timer(object):
+  """Utility class for tracking time used in a function"""
   def __init__(self, label, print_fn=data.print_out):
     self.startt = time.time()
     self.label = label

@@ -4,6 +4,10 @@ from tensorflow.python.training import moving_averages
 import functools
 
 def broadcast_as(origin, target, axes=None):
+  """Broadcast origin into the shape of target using numpy-style broadcasting.
+
+  If axes is not None, set the shape to be 1 (rather than target.shape[i])
+  for each axis i not in axes."""
   in_size = shape_list(origin)
   out_size = shape_list(target)
   result = []
@@ -20,6 +24,7 @@ def broadcast_as(origin, target, axes=None):
   return tf.tile(origin, result)
 
 def stack(tensor_list, ax):
+  """Stack many tensors along a single axis"""
   return tf.concat(ax, [tf.expand_dims(t, ax) for t in tensor_list])
 
 def shape_list(tensor):
@@ -27,11 +32,13 @@ def shape_list(tensor):
   return [x or -1 for x in tensor.get_shape().as_list()]
 
 def safe_squeeze(array, i):
+  """Only squeeze a particular axis, and check it was 1"""
   shape = shape_list(array)
   assert shape[i] == 1
   return tf.reshape(array, shape[:i] + (shape[i+1:] if (i+1) else []))
 
 def expand_dims_by_k(array, k):
+  """Add k 1s to the end of the tensor's shape"""
   return tf.reshape(array, shape_list(array) + [1]*k)
 
 
@@ -64,6 +71,7 @@ def fix_batching(f, k, nargs=1):
 softmax = fix_batching(tf.nn.softmax, 1)
 conv2d = fix_batching(tf.nn.conv2d, 3)
 softmax_cross_entropy_with_logits = fix_batching(tf.nn.softmax_cross_entropy_with_logits, 1, 2)
+
 
 
 def masked_moments(x, axes, mask):
