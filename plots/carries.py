@@ -12,12 +12,12 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from neuralgpu import data_utils
+from neuralgpu import generators
 
 
 
 def get_generator(base, sep, aligned=False, randloc=False):
-    base_class = data_utils.AlignedOpGenerator if aligned else data_utils.OpGenerator
+    base_class = generators.AlignedOpGenerator if aligned else generators.OpGenerator
     class CarryGenerator(base_class):
         def __init__(self, carry, overflow, randloc=randloc, base=base, sep=sep, zero_pad=True):
             super(CarryGenerator, self).__init__(base, operator.add, sep)

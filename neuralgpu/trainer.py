@@ -32,10 +32,12 @@ import tensorflow as tf
 from tensorflow.python.platform import gfile
 
 from . import data_utils as data
+from .generators import generators
 from .model import NeuralGPU
 from . import curriculum
 from . import mytf
 from . import records
+from .config import NeuralConfig
 
 def define_flags():
   """This is placed in a function so reload() works"""
@@ -148,7 +150,7 @@ def load_model(sess, checkpoint_dir, reconfig={}):
   FLAGS._parse_flags()
   FLAGS.__flags.update(options)
   data.forward_max = max(FLAGS.forward_max, data.bins[-1])
-  config = curriculum.NeuralConfig(FLAGS)
+  config = NeuralConfig(FLAGS)
   model = NeuralGPU(config)
   ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
   if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
@@ -181,7 +183,7 @@ def get_config_from_flags(checkpoint_dir = None):
 
   data.print_out("NN ", newline=False)
 
-  config = curriculum.NeuralConfig(FLAGS)
+  config = NeuralConfig(FLAGS)
 
   # Check data sizes.
   while len(data.bins) > 1 and data.bins[-2] > config.max_length + EXTRA_EVAL:
@@ -204,7 +206,7 @@ def initialize(sess, checkpoint_dir=None):
   # Initialize data for each task.
   nclass = min(config.niclass, config.noclass)
   tasks = config.task.split(",")
-  data_generators = [data.generators[t] for t in tasks]
+  data_generators = [generators[t] for t in tasks]
   for g in data_generators:
     g._initialize(nclass)
 
