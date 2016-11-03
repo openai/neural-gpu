@@ -125,8 +125,5 @@ def main_thresholds(fname = 'threshold'):
 if __name__ == '__main__':
     if '-t' in sys.argv:
         main_thresholds()
-    # XXX the following two lines can be removed
-    elif '-t2' in sys.argv:
-        main_thresholds('threshold2')
     else:
         main_results()

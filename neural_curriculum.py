@@ -87,7 +87,7 @@ class Curriculum(object):
       cur_length = self.get_cur_length(generator)
       l, within_bounds = self.draw_length(cur_length, generator)
     else:
-      within_bounds = True # XXX not clearly correct, but doesn't really matter
+      within_bounds = True
     return (generator.get_batch(l, batch_size), within_bounds)
 
   def tasks(self):
@@ -244,7 +244,6 @@ def plot_many_examples(sess, model, max_length, generator, batch_size,
   for l, example in examples:
     print(l)
     result = model.step(sess, example, False)
-    result.attention = np.array(result.attention) #XXX kill soon
     result.plot_attention(dirpat % l)
 
 class ResultsRecord(object):
