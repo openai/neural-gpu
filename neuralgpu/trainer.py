@@ -31,11 +31,11 @@ import tensorflow as tf
 
 from tensorflow.python.platform import gfile
 
-import data_utils as data
-from model import NeuralGPU
-import curriculum
-import mytf
-import records
+from . import data_utils as data
+from .model import NeuralGPU
+from . import curriculum
+from . import mytf
+from . import records
 
 def define_flags():
   """This is placed in a function so reload() works"""
@@ -411,9 +411,3 @@ def start_and_train():
     model = initialize(sess)
     timer.done()
     train_loop(sess, model, FLAGS.batch_size, get_checkpoint_dir())
-
-def main(_):
-  start_and_train()
-
-if __name__ == "__main__":
-  tf.app.run()

@@ -6,8 +6,9 @@ ResultsRecord keeps track of the results during one stage of training.
 
 from __future__ import print_function
 
-import data_utils
 import numpy as np
+
+from . import data_utils
 
 class NeuralGPUResult(object):
   """Recover of result of a single batch, which is always on one task."""

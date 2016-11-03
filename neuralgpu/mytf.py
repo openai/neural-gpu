@@ -1,5 +1,7 @@
 """Various improvements to the tensorflow API."""
+
 from __future__ import print_function
+
 import tensorflow as tf
 from tensorflow.python.training import moving_averages
 import functools

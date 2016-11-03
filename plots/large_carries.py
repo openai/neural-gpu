@@ -13,7 +13,8 @@ With '-t', in 'thresholds' it places the minimum threshold at which the success 
 """
 
 from __future__ import print_function
-import tensorflow as tf, neural_gpu_trainer, neural_gpu, neural_curriculum, data_utils, numpy as np
+import tensorflow as tf
+import numpy as np
 import operator
 import pandas
 import random
@@ -22,6 +23,8 @@ import os
 import glob
 import sys
 
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from neuralgpu import trainer, data_utils
 import carries
 
 #data_utils.bins.pop()
@@ -49,7 +52,7 @@ def load_model(dir):
                 'forward_max': 401}  # Large enough to check 200-digit carries
     if model is None:
         sess=tf.Session()
-        model = neural_gpu_trainer.load_model(sess, dir, reconfig)
+        model = trainer.load_model(sess, dir, reconfig)
     else:
         model.saver.restore(sess, dir+'/neural_gpu.ckpt-100000')
 

@@ -1,12 +1,20 @@
 """Class for constructing problem inputs featuring lots of carries."""
 from __future__ import print_function
 
-import tensorflow as tf, neural_gpu_trainer, neural_gpu, neural_curriculum, data_utils, numpy as np
+import tensorflow as tf, numpy as np
+
 import operator
 import pandas
 import random
 import time
 import glob
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from neuralgpu import data_utils
+
+
 
 def get_generator(base, sep, aligned=False, randloc=False):
     base_class = data_utils.AlignedOpGenerator if aligned else data_utils.OpGenerator

@@ -6,7 +6,7 @@ Curriculum and its subclasses decide when to choose which instance
 """
 from __future__ import print_function
 
-import data_utils
+from . import data_utils
 import numpy as np
 
 class NeuralConfig(object):

@@ -17,12 +17,13 @@
 import time
 
 import tensorflow as tf
-import mytf
 
-import data_utils
 import random
 import numpy as np
-from records import NeuralGPUResult
+
+from . import mytf
+from . import data_utils
+from .records import NeuralGPUResult
 
 FLAGS = tf.app.flags.FLAGS
 
