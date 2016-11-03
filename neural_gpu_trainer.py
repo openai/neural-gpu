@@ -124,9 +124,9 @@ def log_parameters(checkpoint_dir):
       data.print_out('ERROR: restarted with changed argv')
       data.print_out('WAS %s' % old_argv)
       data.print_out('NOW %s' % new_argv)
-      raise ValueError("Bad log dir")
+      raise ValueError("Bad log dir: partial state exists with different arguments")
     else:
-      print()
+      print('Reusing existing log dir')
       #raise ValueError("Even though the argv didn't change, we'll still kill you.")
 
   with open(command_fname, 'w') as f:
@@ -214,9 +214,9 @@ def initialize(sess, checkpoint_dir=None):
   for g in data_generators:
     g._initialize(nclass)
   #data_size = FLAGS.train_data_size if FLAGS.mode == 0 else 1000
-  #goal_lengths = [l for l in xrange(max_length + EXTRA_EVAL - 1)] + [data.forward_max]
+  #goal_lengths = [l for l in range(max_length + EXTRA_EVAL - 1)] + [data.forward_max]
   # for t in tasks:
-  #   for l in xrange(max_length + EXTRA_EVAL - 1):
+  #   for l in range(max_length + EXTRA_EVAL - 1):
   #     data.init_data(t, l, data_size, nclass)
   #   data.init_data(t, data.bins[-2], data_size, nclass)
   #   data.init_data(t, data.bins[-1], data_size, nclass)
@@ -234,24 +234,22 @@ def initialize(sess, checkpoint_dir=None):
 
   # Load model from parameters if a checkpoint exists.
   ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+  model.curriculum = None
   if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
     data.print_out("Reading model parameters from %s"
                    % ckpt.model_checkpoint_path)
     model.saver.restore(sess, ckpt.model_checkpoint_path)
     try:
       model.curriculum = yaml.load(open(os.path.join(checkpoint_dir, 'neural_gpu_curriculum.ckpt')))
-    except: #XXX hack
-      curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config,
-                                                      FLAGS.progressive_curriculum)
-      model.curriculum = curriculum
-  else:
-      #curriculum = neural_curriculum.MixedCurriculum(data_generators, model.config)
+    except IOError:
+      pass
+
+  if model.curriculum is None:
     if FLAGS.progressive_curriculum:
-      curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config,
+      model.curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config,
                                                       FLAGS.progressive_curriculum)
     else:
-      curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
-    model.curriculum = curriculum
+      model.curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
 
   # Return the model and needed variables.
   return model
@@ -279,7 +277,7 @@ def multi_test(l, model, sess, task, nprint, batch_size, offset=None):
   to_print = nprint
   low_batch = FLAGS.low_batch_size
   low_batch = min(low_batch, batch_size)
-  for mstep in xrange(batch_size / low_batch):
+  for mstep in range(batch_size // low_batch):
     cur_offset = None if offset is None else offset + mstep * low_batch
     err, sq_err, result = single_test(l, model, sess, task, to_print, low_batch,
                                  False, cur_offset)
@@ -311,7 +309,7 @@ class Timer(object):
 def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
   curriculum = model.curriculum
   results_record = neural_curriculum.ResultsRecord(batch_size)
-  for _ in xrange(nsteps):
+  for _ in range(nsteps):
 
     batch, within_bounds = model.curriculum.draw_example(batch_size)
 
@@ -345,12 +343,10 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
     else:
       data.print_out("  Averaging parameters.")
       sess.run(model.avg_op)
-      # XXX this used to exist, but it doesn't really make sense
-      #if results_record.values()[0].avg_seq_err < (model.config.curriculum_bound / 3.0):
-      #  sess.run(model.lr_decay_op)
 
   # Lower learning rate if we're worse than the last 3 checkpoints.
-  # XXX improve this in a mixed setting
+  # [XXX the logic isn't great in mixed-task settings; it picks one
+  # task semi-arbitrary.]
   first_record = sorted(results_record.record_for_task.items())[0][1]
   acc_perp = data.safe_exp(first_record.avg_loss)
   if acc_perp > thresh:
@@ -450,14 +446,14 @@ def animate(l, test_data, anim_size):
   # Make the figure.
   fig = plt.figure(figsize=(16, 9), facecolor="white")
   ax = fig.add_axes([0, 0, 1, 1], frameon=False, zorder=2)
-  ax.set_xticks([i * 24-0.5 for i in xrange(4)])
+  ax.set_xticks([i * 24-0.5 for i in range(4)])
   ax.set_xticklabels([])
-  ax.set_yticks([i - 0.5 for i in xrange(l+1)])
+  ax.set_yticks([i - 0.5 for i in range(l+1)])
   ax.grid(which="major", axis="both", linestyle="-", color="black")
   # We need text fields.
   text_fields = []
   text_size = 24*32/l
-  for y in xrange(l):
+  for y in range(l):
     text_fields.append(ax.text(
         11.25, y + 0.15, "", color="g", ha="center", va="center",
         bbox={"facecolor": "b", "alpha": 0.01, "pad": 24 * text_size},
@@ -475,10 +471,10 @@ def animate(l, test_data, anim_size):
     batch = frame_no / (fps * (l+4*xf))
     index = int((frame_no % (fps * (l+4*xf))) / fps)
     # Cut output after first padding.
-    out = [out_raw[i][batch] for i in xrange(len(text_fields))]
+    out = [out_raw[i][batch] for i in range(len(text_fields))]
     if 0 in out:
       i = out.index(0)
-      out = out[0:i] + [0 for _ in xrange(len(out) - i)]
+      out = out[0:i] + [0 for _ in range(len(out) - i)]
     # Show the state after the first frames.
     if index >= 2*xf:
       im.set_array(steps[min(length - 1, index - 2*xf)][batch])

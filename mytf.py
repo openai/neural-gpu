@@ -1,4 +1,5 @@
 """Various improvements to the tensorflow API."""
+from __future__ import print_function
 import tensorflow as tf
 from tensorflow.python.training import moving_averages
 import functools
@@ -136,7 +137,7 @@ def print_bn_state(sess, nmaps):
             d[v] = tf.get_variable(v, [nmaps])
     result = sess.run(d, {})
     for v in var_list:
-        print v, result[v]
+        print(v, result[v])
 
 #numpy.fft.ifft(numpy.conj(numpy.fft.fft(a)) * numpy.fft.fft(b)).round(3)
 

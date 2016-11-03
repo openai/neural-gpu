@@ -107,7 +107,7 @@ class DataGenerator(object):
   def get_batch(self, length, batch_size):
     """Construct a complete batch of problem instances"""
     inps, outps = [], []
-    for _ in xrange(batch_size):
+    for _ in range(batch_size):
       inp, outp = self.rand_pair_padded(length)
       inps.append(inp)
       outps.append(outp)
@@ -285,7 +285,7 @@ class CopyGenerator(SpacedGenerator):
     self.base = base
 
   def _rand_pair(self, l):
-    x = [np.random.randint(self.base)+1 for _ in xrange(l)]
+    x = [np.random.randint(self.base)+1 for _ in range(l)]
     inp = x
     res = x
     return inp, res
@@ -296,7 +296,7 @@ class DupGenerator(SpacedGenerator):
     self.base = base
 
   def _rand_pair(self, l):
-    x = [np.random.randint(self.base)+1 for _ in xrange(l//2)]
+    x = [np.random.randint(self.base)+1 for _ in range(l//2)]
     inp = [DUP] + x
     res = x + x
     return inp, res

@@ -20,6 +20,10 @@ My typical invocation is something like
   CUDA_VISIBLE_DEVICES=4 python neural_gpu_trainer.py --random_seed=0 --max_steps=200000 --forward_max=201 --nmaps=256 --task=bmul,qmul,mul --time_till_eval=4 --progressive_curriculum=5 --train_dir=../logs/August-12-curriculum/forward_max=201-nmaps=256-task=bmul,qmul,mul-progressive_curriculum=5-random_seed=0
 ```
 
+```
+CUDA_VISIBLE_DEVICES=1 python neural_gpu_trainer.py --train_dir=/tmp/moo/cow4 --random_seed=10 --max_steps=60000 --forward_max=201 --nmaps=256 --task=badde --time_till_eval=4 --always_large=Tru
+```
+
 You can find a list of options, and their default values, in `neural_gpu_trainer.py`.
 
 Running many instances

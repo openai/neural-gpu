@@ -5,6 +5,7 @@ Curriculum and its subclasses decide when to choose which instance
 NeuralGPUResult records what happened during one run of the NeuralGPU
 ResultsRecord keeps track of the results during one stage of training.
 """
+from __future__ import print_function
 
 import data_utils
 import numpy as np
@@ -241,7 +242,7 @@ def plot_many_examples(sess, model, max_length, generator, batch_size,
   examples = [(l, generator.get_batch(l, batch_size)) for l in range(3, max_length+1)
               if generator.is_valid_length(l)]
   for l, example in examples:
-    print l
+    print(l)
     result = model.step(sess, example, False)
     result.attention = np.array(result.attention) #XXX kill soon
     result.plot_attention(dirpat % l)
@@ -269,7 +270,7 @@ class ResultsRecord(object):
                 fmt_attr('avg_err', '%.2f', 'errors', 100),
                 fmt_attr('avg_seq_err', '%.2f', 'seq-errors', 100),
                 ]
-    if hasattr(self.record_for_task.values()[0], 'binary_gap'):
+    if hasattr(next(iter(self.record_for_task.values())), 'binary_gap'):
       stat_list.append(fmt_attr('avg_binary_gap', '%.3f', 'binary-gap'))
     return ' '.join(stat_list)
 

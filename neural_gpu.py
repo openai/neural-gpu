@@ -88,7 +88,7 @@ def conv_gru(mem, kw, kh, nmaps, cutoff, prefix, extras=[]):
 def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, nconvs=2,
                  extras = []):
   old = cur
-  for i in xrange(nconvs):
+  for i in range(nconvs):
     cur = conv_linear(extras + [cur], kw, kh, nmaps, "cgru_%d_%s" % (i, suffix))
     if i == nconvs - 1:
       cur = old + cur
@@ -98,7 +98,7 @@ def resnet_block(cur, kw, kh, nmaps, cutoff, mask, suffix, nconvs=2,
 def lstm_block(cur, kw, kh, nmaps, cutoff, mask, suffix, nconvs=2,
                extras = []):
   # Do nconvs-many CGRU steps.
-  for layer in xrange(nconvs):
+  for layer in range(nconvs):
     cur = conv_gru(cur, kw, kh, nmaps, cutoff, "cgru_%d_%s" % (layer, suffix),
                    extras = extras)
     cur *= mask
@@ -113,7 +113,7 @@ def gru_block(*args, **kws):
 def relaxed_average(var_name_suffix, rx_step):
   """Calculate the average of relaxed variables having var_name_suffix."""
   relaxed_vars = []
-  for l in xrange(rx_step):
+  for l in range(rx_step):
     with tf.variable_scope("RX%d" % l, reuse=True):
       try:
         relaxed_vars.append(tf.get_variable(var_name_suffix))
@@ -175,7 +175,7 @@ class NeuralGPUAtSize(object):
     if FLAGS.output_layer == 1:
       output, = args
     keep_prob = 1.0 - tf.to_float(self.do_training) * (self.config.dropout * 8.0 / self.length)
-    for it in xrange(self.config.rx_step):
+    for it in range(self.config.rx_step):
       with tf.variable_scope("RX%d" % it) as vs:
         #if index:
         #  vs.reuse_variables()
@@ -221,8 +221,9 @@ class NeuralGPUAtSize(object):
     self.mask = mask
     self.extras = extras
     self.output_layers = output_layers
-    # XXX this should be tf.get_variable so it gets reused
-    it = tf.Variable(0, name='layer_index')
+    it = tf.get_variable("layer_index", [], dtype=tf.int32,
+                         initializer=tf.constant_initializer(0))
+    # Using swap is slower, but saves GPU memory.
     use_swap = bool(self.config.nmaps > 256 or (FLAGS.do_batchnorm and self.config.nmaps == 128))
     num_layers = int(self.config.layer_scale*self.length)
     args = [cur, it] + ([tf.zeros_like(cur)] if FLAGS.output_layer == 1 else [])
