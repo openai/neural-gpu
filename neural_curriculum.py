@@ -1,8 +1,11 @@
 """Several classes used by NeuralGPU:
 
 NeuralConfig contains the configuration, updated from FLAGS.
+
 Curriculum and its subclasses decide when to choose which instance
+
 NeuralGPUResult records what happened during one run of the NeuralGPU
+
 ResultsRecord keeps track of the results during one stage of training.
 """
 from __future__ import print_function
@@ -15,9 +18,7 @@ class NeuralConfig(object):
 
   config_keys = '''nmaps niclass noclass dropout rx_step max_grad_norm
   cutoff nconvs kw kh height mode lr pull pull_incr
-  min_length batch_size grad_noise_scale task
-  train_data_size init_weight curriculum_bound
-  model_class input_height layer_scale
+  min_length batch_size task init_weight curriculum_bound layer_scale
   '''.split()
 
   def __init__(self, FLAGS, **kws):
@@ -30,17 +31,15 @@ class NeuralConfig(object):
     assert max_length + 1 > min_length
     self.max_length = max_length
     self.min_length = min_length
-    self.input_height = self.height
 
   def __str__(self):
-    msg1 = ("layers %d kw %d h %d kh %d relax %d batch %d noise %.2f task %s"
+    msg1 = ("layers %d kw %d h %d kh %d relax %d batch %d task %s"
             % (self.nconvs, self.kw, self.height, self.kh, self.rx_step,
-               self.batch_size, self.grad_noise_scale, self.task))
-    msg2 = "data %d %s" % (self.train_data_size, msg1)
-    msg3 = ("cut %.2f pull %.3f lr %.2f iw %.2f cr %.2f nm %d d%.4f gn %.2f %s" %
+               self.batch_size, self.task))
+    msg2 = ("cut %.2f pull %.3f lr %.2f iw %.2f cr %.2f nm %d d%.4f gn %.2f %s" %
             (self.cutoff, self.pull_incr, self.lr, self.init_weight,
-            self.curriculum_bound, self.nmaps, self.dropout, self.max_grad_norm, msg2))
-    return msg3
+             self.curriculum_bound, self.nmaps, self.dropout, self.max_grad_norm, msg1))
+    return msg2
 
 class Curriculum(object):
   def __init__(self, generators, model_config):

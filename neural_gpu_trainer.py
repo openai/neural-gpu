@@ -47,7 +47,6 @@ def define_flags():
   tf.app.flags.DEFINE_float("pull_incr", 1.2, "Increase pull by that much.")
   tf.app.flags.DEFINE_float("curriculum_bound", 0.15, "Move curriculum < this.")
   tf.app.flags.DEFINE_float("dropout", 0.15, "Dropout that much.")
-  tf.app.flags.DEFINE_float("grad_noise_scale", 0.0, "Gradient noise scale.")
   tf.app.flags.DEFINE_integer("max_steps", 0, "Quit after this many steps.")
   tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size.")
   tf.app.flags.DEFINE_integer("low_batch_size", 16, "Low batch size.")
@@ -55,7 +54,6 @@ def define_flags():
   tf.app.flags.DEFINE_integer("nmaps", 24, "Number of floats in each cell.")
   tf.app.flags.DEFINE_integer("niclass", 33, "Number of classes (0 is padding).")
   tf.app.flags.DEFINE_integer("noclass", 33, "Number of classes (0 is padding).")
-  tf.app.flags.DEFINE_integer("train_data_size", 5000, "Training examples/len.")
   tf.app.flags.DEFINE_integer("max_length", 41, "Maximum length.")
   tf.app.flags.DEFINE_integer("rx_step", 6, "Relax that many recursive steps.")
   tf.app.flags.DEFINE_integer("random_seed", 125459, "Random seed.")
@@ -66,7 +64,6 @@ def define_flags():
   tf.app.flags.DEFINE_integer("kh", 3, "Kernel height.")
   tf.app.flags.DEFINE_integer("height", 4, "Height.")
   tf.app.flags.DEFINE_integer("forward_max", 401, "Maximum forward length.")
-  tf.app.flags.DEFINE_integer("jobid", 0, "Task id when running on borg.")
   tf.app.flags.DEFINE_integer("nprint", 0, "How many test examples to print out.")
   tf.app.flags.DEFINE_integer("mode", 0, "Mode: 0-train other-decode.")
   tf.app.flags.DEFINE_bool("animate", False, "Whether to produce an animation.")
@@ -76,28 +73,29 @@ def define_flags():
   tf.app.flags.DEFINE_string("train_dir", "/tmp/neural", "Directory to store models.")
 
   tf.app.flags.DEFINE_float("layer_scale", 1.0, "Number of layers to use")
-  tf.app.flags.DEFINE_string("model_class", "neural_gpu.NeuralGPU", "Model class")
 
-  #tf.app.flags.DEFINE_bool("do_attention", False, "Whether to use attention method.")
-  tf.app.flags.DEFINE_integer("num_attention", 0, "Number of attention modules to use.")
-
+  # Batchnorm:     0 = none
+  #                2 = correct
+  #                1 = not quite correct, because of how masking is done, but simpler.
   tf.app.flags.DEFINE_integer("do_batchnorm", 0, "Whether to use batch normalization.")
+
   tf.app.flags.DEFINE_bool("do_resnet", False, "Whether to use resnets.")
-
-  tf.app.flags.DEFINE_bool("original_non_binary", False, "Use an initial convolution that makes everything escape [0,1].")
-
-  tf.app.flags.DEFINE_float("do_binarization", 0.0, "Penalty for non-binary activations")
-  tf.app.flags.DEFINE_integer("do_shifter", 0, "Whether shift stuff at each layer.")
 
   tf.app.flags.DEFINE_bool("print_one", True, "Print one example each evaluation")
 
+  # output layer: 0 = standard: output layer n on length-n inputs
+  #               1 = alternate: output sum of first n layers on length-n inputs.
   tf.app.flags.DEFINE_integer("output_layer", 0, "Which layer to output.")
-  tf.app.flags.DEFINE_integer("input_height", 1, "Input height.")
 
+  # progressive_curriculum: 0 = none: always train on first task.
+  #                         1-5: progress through the tasks in sequence,
+  #                              training each one to length max_len then move on.
+  #                              The different options have subtle changes; see
+  #                              BetterCurriculum for details.
+  #                              5 is probably the best one.
   tf.app.flags.DEFINE_integer("progressive_curriculum", 0, "Whether to use progressive curriculum.")
-  tf.app.flags.DEFINE_bool("taskid", False, "Feed task id to algorithm")
+  tf.app.flags.DEFINE_bool("taskid", False, "Feed task id to algorithm in each layer")
 
-  tf.app.flags.DEFINE_integer("do_globalsum", 0, "Feed global sum to everyone.")
   tf.app.flags.DEFINE_bool("always_large", False, "Perform the large test even when the model is inaccurate")
 
 FLAGS = tf.app.flags.FLAGS
@@ -150,8 +148,7 @@ def load_model(sess, checkpoint_dir, reconfig={}):
   FLAGS.__flags.update(options)
   data.forward_max = max(FLAGS.forward_max, data.bins[-1])
   config = neural_curriculum.NeuralConfig(FLAGS)
-  cls = data.load_class(config.model_class)
-  model = cls(config)
+  model = neural_gpu.NeuralGPU(config)
   ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
   if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
     model.saver.restore(sess, ckpt.model_checkpoint_path)
@@ -163,7 +160,7 @@ def get_checkpoint_dir():
 
 def get_config_from_flags(checkpoint_dir = None):
   # Set random seed.
-  seed = FLAGS.random_seed + max(0, FLAGS.jobid)
+  seed = FLAGS.random_seed
   tf.set_random_seed(seed)
   random.seed(seed)
   np.random.seed(seed)
@@ -179,11 +176,7 @@ def get_config_from_flags(checkpoint_dir = None):
       pass
     gfile.MkDir(checkpoint_dir)
 
-  if FLAGS.jobid >= 0:
-    data.log_filename = os.path.join(checkpoint_dir, "log%d" % FLAGS.jobid)
-
-  data.err_tee = data.TeeErr(open(os.path.join(checkpoint_dir, "err%d" % FLAGS.jobid),
-                                  'w'))
+  data.err_tee = data.TeeErr(open(os.path.join(checkpoint_dir, "err"), 'w'))
 
   data.print_out("NN ", newline=False)
 
@@ -213,21 +206,11 @@ def initialize(sess, checkpoint_dir=None):
   data_generators = [data.generators[t] for t in tasks]
   for g in data_generators:
     g._initialize(nclass)
-  #data_size = FLAGS.train_data_size if FLAGS.mode == 0 else 1000
-  #goal_lengths = [l for l in range(max_length + EXTRA_EVAL - 1)] + [data.forward_max]
-  # for t in tasks:
-  #   for l in range(max_length + EXTRA_EVAL - 1):
-  #     data.init_data(t, l, data_size, nclass)
-  #   data.init_data(t, data.bins[-2], data_size, nclass)
-  #   data.init_data(t, data.bins[-1], data_size, nclass)
-  #   end_size = 4 * 1024 if FLAGS.mode > 0 else 1024
-  #   data.init_data(t, data.forward_max, end_size, nclass)
 
   # Create model and initialize it.
   tf.get_variable_scope().set_initializer(
       tf.uniform_unit_scaling_initializer(factor=1.8 * FLAGS.init_weight))
-  cls = data.load_class(config.model_class)
-  model = cls(config)
+  model = neural_gpu.NeuralGPU(config)
   data.print_out("Created model.")
   sess.run(tf.initialize_all_variables())
   data.print_out("Initialized variables.")
@@ -284,11 +267,6 @@ def multi_test(l, model, sess, task, nprint, batch_size, offset=None):
     to_print = max(0, to_print - low_batch)
     errors += err
     seq_err += sq_err
-    if FLAGS.mode > 0:
-      cur_errors = float(low_batch * errors) / ((mstep+1) * low_batch)
-      cur_seq_err = float(low_batch * seq_err) / ((mstep+1) * low_batch)
-      data.print_out("    %s multitest current errors %.2f sequence-errors %.2f"
-                     % (task, 100*cur_errors, 100*cur_seq_err))
   errors = float(low_batch) * float(errors) / batch_size
   seq_err = float(low_batch) * float(seq_err) / batch_size
   data.print_out("  %s len %d errors %.2f sequence-errors %.2f"
@@ -434,114 +412,8 @@ def start_and_train():
     timer.done()
     train_loop(sess, model, FLAGS.batch_size, get_checkpoint_dir())
 
-
-def animate(l, test_data, anim_size):
-  """Create animation for the given data (hacky matplotlib use).
-
-  ecprice: This has not been tested and probably does not work.
-  """
-  xf = 12  # Extra frames to slow down at start and end.
-  fps = 2  # Frames per step.
-
-  # Make the figure.
-  fig = plt.figure(figsize=(16, 9), facecolor="white")
-  ax = fig.add_axes([0, 0, 1, 1], frameon=False, zorder=2)
-  ax.set_xticks([i * 24-0.5 for i in range(4)])
-  ax.set_xticklabels([])
-  ax.set_yticks([i - 0.5 for i in range(l+1)])
-  ax.grid(which="major", axis="both", linestyle="-", color="black")
-  # We need text fields.
-  text_fields = []
-  text_size = 24*32/l
-  for y in range(l):
-    text_fields.append(ax.text(
-        11.25, y + 0.15, "", color="g", ha="center", va="center",
-        bbox={"facecolor": "b", "alpha": 0.01, "pad": 24 * text_size},
-        size=text_size - (4 * 32 / l), animated=True))
-  im = ax.imshow(np.zeros_like(test_data[0][0][0]), vmin=-1.0,
-                 vmax=1.0, cmap="gray", aspect="auto", origin="upper",
-                 interpolation="none", animated=True)
-  im.set_zorder(1)
-
-  # Main animation step.
-  def animation_update(frame_no, test_data, xf, im, text_fields):
-    """Update an animation frame."""
-    steps, inpt, out_raw = test_data
-    length = len(steps)
-    batch = frame_no / (fps * (l+4*xf))
-    index = int((frame_no % (fps * (l+4*xf))) / fps)
-    # Cut output after first padding.
-    out = [out_raw[i][batch] for i in range(len(text_fields))]
-    if 0 in out:
-      i = out.index(0)
-      out = out[0:i] + [0 for _ in range(len(out) - i)]
-    # Show the state after the first frames.
-    if index >= 2*xf:
-      im.set_array(steps[min(length - 1, index - 2*xf)][batch])
-      for i, t in enumerate(text_fields):
-        if index - 2*xf < length:
-          t.set_text("")
-        else:
-          t.set_text(data.to_symbol(out[i]))
-    else:
-      for i, t in enumerate(text_fields):
-        t.set_text(data.to_symbol(inpt[i][batch]) if index < xf else "")
-      if index < xf:
-        im.set_array(np.zeros_like(steps[0][0]))
-      else:
-        im.set_array(steps[0][batch])
-    return im,
-
-  # Create the animation and save to mp4.
-  animation = anim.FuncAnimation(
-      fig, animation_update, blit=True, frames=(l+4*xf)*anim_size*fps,
-      interval=500/fps, fargs=(test_data, xf, im, text_fields))
-  animation.save("/tmp/neural_gpu.mp4", writer="mencoder", fps=4*fps, dpi=3*80)
-
-
-def evaluate():
-  """Evaluate an existing model."""
-  batch_size = FLAGS.batch_size
-  tasks = FLAGS.task.split(",")
-  with tf.Session() as sess:
-    model = initialize(sess)
-    bound = data.bins[-1] + 1
-    for t in tasks:
-      l = model.config.min_length
-      while l < model.config.max_length + EXTRA_EVAL and l < bound:
-        _, seq_err, _ = single_test(l, model, sess, t, FLAGS.nprint,
-                                    batch_size)
-        l += 1
-        while l < bound + 1 and not data.test_set[t][l]:
-          l += 1
-      # Animate.
-      if FLAGS.animate:
-        anim_size = 2
-        _, _, result = single_test(l, model, sess, t, 0, anim_size,
-                                      get_steps=True)
-        this_is_broken_because_it_is_the_wrong_format
-        animate(l, test_data, anim_size)
-      # More tests.
-      _, seq_err, result = multi_test(data.forward_max, model, sess, t, FLAGS.nprint,
-                              batch_size * 4)
-    if seq_err < 0.01:  # Super-test if we're very good and in large-test mode.
-      if data.forward_max > 4000 and len(tasks) == 1:
-        multi_test(data.forward_max, model, sess, tasks[0], FLAGS.nprint,
-                   batch_size * 64, 0)
-
 def main(_):
-  if FLAGS.mode == 0:
-    start_and_train()
-  elif FLAGS.mode == 1:
-    evaluate()
-  elif FLAGS.mode == 2:
-    with tf.Session() as sess:
-      import cProfile as profile
-      t = Timer("Starting...")
-      profile.runctx('model = initialize(sess)', globals(), locals(), 'profile')
-      t.done()
-  else:
-    interactive()
+  start_and_train()
 
 if __name__ == "__main__":
   tf.app.run()

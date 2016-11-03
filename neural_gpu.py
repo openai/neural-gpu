@@ -149,10 +149,9 @@ class NeuralGPUAtSize(object):
     self.config = model.config
     self.length = length
     # batch_size x length x height
-    self.input = tf.placeholder(tf.int32, shape=(None, length, self.config.input_height),
+    self.input = tf.placeholder(tf.int32, shape=(None, length, self.config.height),
                                 name="input{0}".format(length))
     self.target = tf.placeholder(tf.int32, shape=(None,length), name="target{0}".format(length))
-    #tf.concat(1, [tf.reshape(i, [-1, 1]) for i in model.target[:length]])
     self.emb_weights = model.emb_weights
     self.e0 = model.e0
     self.do_training = tf.placeholder(tf.bool, shape=[], name="do_training")
@@ -177,8 +176,6 @@ class NeuralGPUAtSize(object):
     keep_prob = 1.0 - tf.to_float(self.do_training) * (self.config.dropout * 8.0 / self.length)
     for it in range(self.config.rx_step):
       with tf.variable_scope("RX%d" % it) as vs:
-        #if index:
-        #  vs.reuse_variables()
         old = cur
         cur = tf.nn.dropout(cur, keep_prob)
         cur = gru_block(cur, self.config.kw, self.config.kh, self.config.nmaps,
@@ -195,7 +192,6 @@ class NeuralGPUAtSize(object):
           output += cur
         else:
           cur = tf.select(tf.greater_equal(self.output_layers, index + it), cur, old)
-        #layers.append(cur)
     if FLAGS.output_layer == 1:
       return (cur, index + self.config.rx_step, output)
     else:
@@ -205,8 +201,6 @@ class NeuralGPUAtSize(object):
     # first: batch_size x length x height x nmaps
 
     output_layers = tf.to_int32(tf.reduce_sum(mask, [1,2,3]))
-    #avg_length = tf.reduce_mean(tf.reduce_sum(mask, [1,2,3])) # shape: batch_size
-    #desired_norms = mytf.expand_dims_by_k(tf.sqrt(real_lengths), 3) / 6
 
     cur = first
     layers = []
@@ -236,8 +230,6 @@ class NeuralGPUAtSize(object):
       ans = result[-1]
     else:
       ans = result[0]
-    #while it < self.length:
-    #  cur, it = self.looping_layer(cur, it)
     return ans
 
   def _get_first_layer(self, mask):
@@ -249,17 +241,8 @@ class NeuralGPUAtSize(object):
     with tf.control_dependencies([self.e0]):
       embedded = tf.nn.embedding_lookup(self.emb_weights, self.input)
 
-    # start: batch_size x length x input_height x nmaps
-    start = tf.tanh(embedded)
-
-    # First image comes from start by applying one convolution and adding 0s.
     # first: batch_size x length x height x nmaps
-    if FLAGS.original_non_binary:
-      first = conv_linear(start, 1, 1, nmaps, "input")
-    else:
-      first = start
-    padding_height = height - mytf.shape_list(first)[2]
-    first = tf.concat(2, [first] + [tf.zeros_like(first[:,:,:1,:])]*padding_height) * mask
+    first = tf.tanh(embedded)
 
     return first
 
@@ -290,10 +273,6 @@ class NeuralGPUAtSize(object):
     # Final loss: cross-entropy + shared parameter relaxation part.
     relax_dist, self.model.avg_op = relaxed_distance(self.config.rx_step)
     total_loss = perp_loss + relax_dist * self.model.pull
-    if FLAGS.do_binarization:
-      binary_gaps = 1 - tf.abs(self.layers)
-      self.binary_gap = tf.reduce_mean(binary_gaps * mask) / tf.reduce_mean(mask)
-      total_loss += self.binary_gap * FLAGS.do_binarization
     self.loss = perp_loss
 
     # Gradients and Adam update operation.
@@ -319,8 +298,8 @@ class NeuralGPUAtSize(object):
     if len(inp.shape) == 2:
       inp = np.expand_dims(inp, 1)
     assert len(inp.shape) == 3
-    if inp.shape[1] < self.config.input_height:
-      extra = self.config.input_height - inp.shape[1]
+    if inp.shape[1] < self.config.height:
+      extra = self.config.height - inp.shape[1]
       inp = np.concatenate([inp] + [np.zeros_like(inp[:,:1,:])]*extra, axis=1)
     feed_in = {}
     feed_in[self.do_training] = do_backward
@@ -334,12 +313,9 @@ class NeuralGPUAtSize(object):
       feed_out['grad_norm'] = self.grad_norm
     if get_steps:
       feed_out['layers'] = self.layers
-    if FLAGS.do_binarization:
-      feed_out['binary_gap'] = self.binary_gap
     if hasattr(self, 'probs'):
       feed_out['probs'] = self.probs
     feed_out['loss'] = self.loss
-    #feed_out['layer_outputs'] = self.layer_outputs
     feed_out['output'] = self.output
     res = sess.run(feed_out, feed_in)
     return neural_curriculum.NeuralGPUResult(res, inp, target, taskid)
@@ -367,13 +343,12 @@ class NeuralGPU(object):
   def construct_graph(self):
     vec_size = self.config.nmaps
     # Computation.
-    if True:#with tf.device("/cpu:0"):
-      self.emb_weights = tf.get_variable(
-          "embedding", [self.config.niclass, vec_size],
-          initializer=tf.random_uniform_initializer(-1.7, 1.7))
-      self.e0 = tf.scatter_update(self.emb_weights,
-                             tf.constant(0, dtype=tf.int32, shape=[1]),
-                             tf.zeros([1, vec_size]))
+    self.emb_weights = tf.get_variable(
+        "embedding", [self.config.niclass, vec_size],
+        initializer=tf.random_uniform_initializer(-1.7, 1.7))
+    self.e0 = tf.scatter_update(self.emb_weights,
+                           tf.constant(0, dtype=tf.int32, shape=[1]),
+                           tf.zeros([1, vec_size]))
 
     adam = tf.train.AdamOptimizer(self.lr, epsilon=1e-4, use_locking=True)
 

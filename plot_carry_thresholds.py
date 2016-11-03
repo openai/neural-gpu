@@ -4,7 +4,7 @@ import numpy as np
 
 #pylab.ion()
 
-data = np.array([int(open(fname).read().strip()) for fname in glob.glob('cachedlogs/September-0*/*/threshold')])
+data = np.array([int(open(fname).read().strip()) for fname in glob.glob('cachedlogs/September-0*/*/threshold2')])
 data.sort()
 
 
@@ -12,8 +12,8 @@ pylab.clf()
 pylab.plot(1-np.arange(len(data)) * 1./ len(data), data, marker='o')
 pylab.loglog()
 pylab.xlabel('Fraction of runs')
-pylab.ylabel('# carries before failure')
-pylab.title('Log log plot: carries by run percentile')
+pylab.ylabel('Carry length with 50% failure')
+pylab.title('Carries by run percentile (log log plot)')
 pylab.savefig('carry_runs_loglog.pdf')
 
 pylab.clf()
