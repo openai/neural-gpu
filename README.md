@@ -17,11 +17,12 @@ python neural_gpu_trainer.py --nmaps=256 --task=bmul,qmul,mul --progressive_curr
 My typical invocation is something like
 
 ```
-  CUDA_VISIBLE_DEVICES=4 python neural_gpu_trainer.py --random_seed=0 --max_steps=200000 --forward_max=201 --nmaps=256 --task=bmul,qmul,mul --time_till_eval=4 --progressive_curriculum=5 --train_dir=../logs/August-12-curriculum/forward_max=201-nmaps=256-task=bmul,qmul,mul-progressive_curriculum=5-random_seed=0
+  CUDA_VISIBLE_DEVICES=0 python neural_gpu_trainer.py --random_seed=0 --max_steps=200000 --forward_max=201 --nmaps=256 --task=bmul,qmul,mul --time_till_eval=4 --progressive_curriculum=5 --train_dir=../logs/August-12-curriculum/forward_max=201-nmaps=256-task=bmul,qmul,mul-progressive_curriculum=5-random_seed=0
 ```
 
+The tests on decimal carry were done using invocations like the following:
 ```
-CUDA_VISIBLE_DEVICES=1 python neural_gpu_trainer.py --train_dir=/tmp/moo/cow4 --random_seed=10 --max_steps=60000 --forward_max=201 --nmaps=256 --task=badde --time_till_eval=4 --always_large=Tru
+  CUDA_VISIBLE_DEVICES=0 neural_gpu_trainer.py --train_dir=../logs/run1 --random_seed=1 --max_steps=100000 --forward_max=201 --nmaps=128 --task=add --time_till_eval=4 --time_till_ckpt=1
 ```
 
 You can find a list of options, and their default values, in `neural_gpu_trainer.py`.

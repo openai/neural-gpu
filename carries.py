@@ -1,4 +1,6 @@
 """Class for constructing problem inputs featuring lots of carries."""
+from __future__ import print_function
+
 import tensorflow as tf, neural_gpu_trainer, neural_gpu, neural_curriculum, data_utils, numpy as np
 import operator
 import pandas
@@ -43,7 +45,7 @@ def get_generator(base, sep, aligned=False, randloc=False):
                         ans += cls.get_error_rate(sess, model, carry, col, max_length, blocksize)
                     df[col][carry] = ans
                 if verbose:
-                    print carry, ':', df[False][carry], df[True][carry]
+                    print(carry, ':', df[False][carry], df[True][carry])
             return df
 
     return CarryGenerator

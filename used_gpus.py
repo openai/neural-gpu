@@ -19,7 +19,7 @@ def main():
             used = used.union(used_by_pid(pid))
         except IOError as e:
             continue
-    print ' '.join(sorted(used))
+    print(' '.join(sorted(used)))
 
 if __name__ == '__main__':
     main()

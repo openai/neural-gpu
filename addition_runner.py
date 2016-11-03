@@ -1,4 +1,5 @@
 """Command to run 50 instances of test_addition.py"""
+from __future__ import print_function
 
 import generic_run as run
 import collections
@@ -12,7 +13,7 @@ param_sets = [[('seed', seed),
 
 param_sets = map(collections.OrderedDict, param_sets)
 
-print "Running", len(param_sets), "jobs"
+print("Running", len(list(param_sets)), "jobs")
 
 run.parser.set_defaults(label=LABEL)
 run.parser.set_defaults(program='python test_addition.py')

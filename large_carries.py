@@ -12,6 +12,7 @@ With no arguments, in 'carries.csv' it places the success rate for various lengt
 With '-t', in 'thresholds' it places the minimum threshold at which the success rate is < 50%
 """
 
+from __future__ import print_function
 import tensorflow as tf, neural_gpu_trainer, neural_gpu, neural_curriculum, data_utils, numpy as np
 import operator
 import pandas
@@ -73,10 +74,10 @@ def run_dir(dir):
     try:
         results = get_data(dir)
     except tensorflow.python.framework.errors.FailedPreconditionError as e:
-        print >> sys.stderr, 'ERROR ON DIR', dir
-        print
-        print e
-        print
+        print('ERROR ON DIR', dir, file=sys.stderr)
+        print()
+        print(e)
+        print()
         return
     with open(dir+'/carries.csv', 'w') as f:
         f.write(results.to_csv())
@@ -101,26 +102,26 @@ def find_threshold():
 
         blocksize = 32
         result = get_estimate(blocksize)
-        print n, result
+        print(n, result)
         # Be extra careful once we get close
         if abs(result - .5) < .2:
             result = np.mean([result] + [get_estimate(blocksize) for _ in range(2)])
-            print 'Refined estimate:', result
+            print('Refined estimate:', result)
         return result >= .5
     return bsearch(is_leq)
 
 def main_results():
     for dir in find_dirs():
-        print 'Checking', dir
+        print('Checking', dir)
         run_dir(dir)
 
 def main_thresholds(fname = 'threshold'):
     for dir in find_dirs(check_file=fname):
-        print 'Checking', dir
+        print('Checking', dir)
         load_model(dir)
         thresh = find_threshold()
         with open(os.path.join(dir, fname), 'w') as f:
-            print >> f, thresh
+            print(thresh, file=f)
 
 if __name__ == '__main__':
     if '-t' in sys.argv:
