@@ -22,7 +22,7 @@ import mytf
 import data_utils
 import random
 import numpy as np
-import neural_curriculum
+from records import NeuralGPUResult
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -318,7 +318,7 @@ class NeuralGPUAtSize(object):
     feed_out['loss'] = self.loss
     feed_out['output'] = self.output
     res = sess.run(feed_out, feed_in)
-    return neural_curriculum.NeuralGPUResult(res, inp, target, taskid)
+    return NeuralGPUResult(res, inp, target, taskid)
 
 class NeuralGPU(object):
   """Neural GPU Model."""

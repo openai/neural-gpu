@@ -32,9 +32,10 @@ import tensorflow as tf
 from tensorflow.python.platform import gfile
 
 import data_utils as data
-import neural_gpu
-import neural_curriculum
+from model import NeuralGPU
+import curriculum
 import mytf
+import records
 
 def define_flags():
   """This is placed in a function so reload() works"""
@@ -147,8 +148,8 @@ def load_model(sess, checkpoint_dir, reconfig={}):
   FLAGS._parse_flags()
   FLAGS.__flags.update(options)
   data.forward_max = max(FLAGS.forward_max, data.bins[-1])
-  config = neural_curriculum.NeuralConfig(FLAGS)
-  model = neural_gpu.NeuralGPU(config)
+  config = curriculum.NeuralConfig(FLAGS)
+  model = NeuralGPU(config)
   ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
   if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
     model.saver.restore(sess, ckpt.model_checkpoint_path)
@@ -180,7 +181,7 @@ def get_config_from_flags(checkpoint_dir = None):
 
   data.print_out("NN ", newline=False)
 
-  config = neural_curriculum.NeuralConfig(FLAGS)
+  config = curriculum.NeuralConfig(FLAGS)
 
   # Check data sizes.
   while len(data.bins) > 1 and data.bins[-2] > config.max_length + EXTRA_EVAL:
@@ -210,7 +211,7 @@ def initialize(sess, checkpoint_dir=None):
   # Create model and initialize it.
   tf.get_variable_scope().set_initializer(
       tf.uniform_unit_scaling_initializer(factor=1.8 * FLAGS.init_weight))
-  model = neural_gpu.NeuralGPU(config)
+  model = NeuralGPU(config)
   data.print_out("Created model.")
   sess.run(tf.initialize_all_variables())
   data.print_out("Initialized variables.")
@@ -229,10 +230,10 @@ def initialize(sess, checkpoint_dir=None):
 
   if model.curriculum is None:
     if FLAGS.progressive_curriculum:
-      model.curriculum = neural_curriculum.BetterCurriculum(data_generators, model.config,
+      model.curriculum = curriculum.BetterCurriculum(data_generators, model.config,
                                                       FLAGS.progressive_curriculum)
     else:
-      model.curriculum = neural_curriculum.GeneralizeCurriculum(data_generators, model.config)
+      model.curriculum = curriculum.GeneralizeCurriculum(data_generators, model.config)
 
   # Return the model and needed variables.
   return model
@@ -285,8 +286,7 @@ class Timer(object):
     self.print_fn('Finish %s, took %s seconds' % (self.label, time.time()-self.startt))
 
 def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
-  curriculum = model.curriculum
-  results_record = neural_curriculum.ResultsRecord(batch_size)
+  results_record = records.ResultsRecord(batch_size)
   for _ in range(nsteps):
 
     batch, within_bounds = model.curriculum.draw_example(batch_size)
@@ -301,7 +301,7 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
   global_step, lr, pull = sess.run( [model.global_step, model.lr, model.pull])
   # Normalize and print out accumulated statistics.
   message = ('step %s ' % (global_step, ) +
-             'len %s ' % curriculum.length_str +
+             'len %s ' % model.curriculum.length_str +
              'lr %.8f pull %.3f ' % (lr, pull) +
              '%s' % str(results_record)
   )
@@ -310,7 +310,7 @@ def train_for_a_bit(sess, model, batch_size, nsteps, thresh=0.0):
   if FLAGS.do_batchnorm:
     mytf.print_bn_state(sess, model.config.nmaps)
 
-  would_extend = curriculum.consider_extending(results_record)
+  would_extend = model.curriculum.consider_extending(results_record)
   decent = (would_extend >= 1)
   extended = (would_extend >= 2)
   # If errors are below the curriculum threshold, move curriculum forward.
