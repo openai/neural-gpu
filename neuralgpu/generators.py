@@ -221,7 +221,7 @@ class SpacedGenerator(DataGenerator):
   def rand_pair(self, l):
     l2 = np.random.randint(self.min_length, l)
     inp, res = self._rand_pair(l2)
-    if isinstance(inp[0], int):
+    if not hasattr(inp[0], '__iter__'):
       inp = [inp]
     inp = np.array(inp)
     goal_dims = (self.height, l)
