@@ -1,3 +1,5 @@
+**Status:** Archive (code is provided as-is, no updates expected)
+
 Code for the Neural GPU model originally described in
 [[http://arxiv.org/abs/1511.08228]].
 
